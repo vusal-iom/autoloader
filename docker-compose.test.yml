@@ -1,0 +1,53 @@
+version: '3.8'
+
+services:
+  minio:
+    image: minio/minio:latest
+    container_name: autoloader-test-minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    volumes:
+      - minio_test_data:/data
+    networks:
+      - test_network
+
+  postgres:
+    image: postgres:15
+    container_name: autoloader-test-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: autoloader_test
+      POSTGRES_USER: test_user
+      POSTGRES_PASSWORD: test_password
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U test_user -d autoloader_test"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    volumes:
+      - postgres_test_data:/var/lib/postgresql/data
+    networks:
+      - test_network
+
+volumes:
+  minio_test_data:
+    driver: local
+  postgres_test_data:
+    driver: local
+
+networks:
+  test_network:
+    driver: bridge
