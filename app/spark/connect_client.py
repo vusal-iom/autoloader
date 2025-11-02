@@ -116,7 +116,7 @@ class SparkConnectClient:
         trigger_mode: str = "availableNow",
     ):
         """
-        Write streaming DataFrame to Delta table.
+        Write streaming DataFrame to Iceberg table.
 
         Args:
             df: Streaming DataFrame
@@ -130,7 +130,7 @@ class SparkConnectClient:
             StreamingQuery
         """
         writer = (
-            df.writeStream.format("delta")
+            df.writeStream.format("iceberg")
             .outputMode(write_mode)
             .option("checkpointLocation", checkpoint_location)
             .option("mergeSchema", "true")

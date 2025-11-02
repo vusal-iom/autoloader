@@ -102,7 +102,7 @@
     │  │   Spark Executors                    │       │
     │  │   - Read from cloud storage          │       │
     │  │   - Process data                     │       │
-    │  │   - Write to Delta Lake              │       │
+    │  │   - Write to Apache Iceberg          │       │
     │  └──────────────────────────────────────┘       │
     │                                                   │
     └───────────────────────────────────────────────────┘
@@ -112,7 +112,7 @@
         │   Cloud Storage (S3/Azure/GCS)     │
         │   - Source files                    │
         │   - Checkpoints                    │
-        │   - Delta Lake tables              │
+        │   - Apache Iceberg tables          │
         └────────────────────────────────────┘
 ```
 
@@ -202,7 +202,7 @@ class IngestionExecutor(config: IngestionConfig) {
       
       // Write to target table
       val query = transformedDf.writeStream
-        .format("delta")
+        .format("iceberg")
         .outputMode("append")
         .option("checkpointLocation", config.checkpointLocation)
         .option("mergeSchema", config.format.schema.evolutionEnabled)

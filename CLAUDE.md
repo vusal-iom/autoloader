@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-IOMETE Autoloader is a zero-code, UI-driven data ingestion system that enables users to automatically load files from cloud storage (AWS S3, Azure Blob, GCS) into Delta Lake tables without writing Spark code. The project is currently in early implementation phase (MVP) with comprehensive documentation and architecture in place.
+IOMETE Autoloader is a zero-code, UI-driven data ingestion system that enables users to automatically load files from cloud storage (AWS S3, Azure Blob, GCS) into Apache Iceberg tables without writing Spark code. The project is currently in early implementation phase (MVP) with comprehensive documentation and architecture in place.
 
 **Key Features:**
 - Scheduled batch ingestion (hourly, daily, custom cron)
@@ -38,7 +38,7 @@ Even then, the job makes the UX clunkier than just a simple UI to configure a fi
 **Spark Integration:**
 - PySpark with Spark Connect 3.5.0
 - Auto Loader (cloudFiles) for incremental ingestion
-- Delta Lake for destination tables
+- Apache Iceberg for destination tables
 
 **Database:**
 - PostgreSQL (production) with psycopg2
@@ -178,7 +178,7 @@ app/
 - `connect()` - Establish Spark Connect session with cloud credentials
 - `test_connection()` - Verify connectivity and Spark version
 - `read_stream()` - Create Auto Loader streaming DataFrame with cloudFiles
-- `write_stream()` - Write to Delta table with trigger control
+- `write_stream()` - Write to Iceberg table with trigger control
 - `preview_files()` - Sample data preview with schema inference
 - Cloud credential configuration (S3, Azure, GCS)
 

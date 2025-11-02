@@ -428,7 +428,7 @@ As Alex, I want to...
 │  │    Apache Spark Cluster                  │            │
 │  │  - Auto Loader jobs (generated)          │            │
 │  │  - Checkpoint management                 │            │
-│  │  - Delta Lake writes                     │            │
+│  │  - Apache Iceberg writes                 │            │
 │  └──────────────────────────────────────────┘            │
 │                                                           │
 └───────────────────────────────────────────────────────────┘
@@ -438,7 +438,7 @@ As Alex, I want to...
         │   Cloud Storage (S3/Azure/GCS)     │
         │   - Source files                    │
         │   - Checkpoints                    │
-        │   - Delta Lake tables              │
+        │   - Apache Iceberg tables          │
         └────────────────────────────────────┘
 ```
 
@@ -490,7 +490,7 @@ spark.readStream
   .option("cloudFiles.useNotifications", "true")  // if enabled
   .load(sourcePath)
   .writeStream
-  .format("delta")
+  .format("iceberg")
   .option("checkpointLocation", checkpointPath)
   .trigger(Trigger.AvailableNow)  // for scheduled batch
   .toTable(targetTable)
@@ -797,7 +797,7 @@ def detect_schema_changes(ingestion_id, new_files):
 - Store processed file list in checkpoint
 - On restart, resume from checkpoint
 - For merge mode:
-    - Use Delta Lake merge (upsert)
+    - Use Apache Iceberg merge (upsert)
     - Require primary key configuration
     - Deduplicate before writing
 
@@ -1301,13 +1301,13 @@ def detect_schema_changes(ingestion_id, new_files):
 - **Schema Evolution:** When the structure of source data changes (new columns, type changes)
 - **Backfill:** Processing historical/existing files in addition to new files
 - **DBU:** Databricks Unit, a unit of compute measurement (used for cost estimation)
-- **Delta Lake:** Open-source storage layer that provides ACID transactions
+- **Apache Iceberg:** Open-source table format that provides ACID transactions and schema evolution
 
 ### B. References
 - Databricks Auto Loader Documentation: https://docs.databricks.com/ingestion/auto-loader/
 - Snowflake Snowpipe Documentation: https://docs.snowflake.com/en/user-guide/data-load-snowpipe
 - Apache Spark Structured Streaming: https://spark.apache.org/docs/latest/structured-streaming-programming-guide.html
-- Delta Lake Documentation: https://docs.delta.io/
+- Apache Iceberg Documentation: https://iceberg.apache.org/
 
 ### C. Mockups Reference
 UI mockups available at:
