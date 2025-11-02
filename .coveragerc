@@ -1,0 +1,85 @@
+# Coverage.py configuration
+# https://coverage.readthedocs.io/
+
+[run]
+# Source code paths to measure
+source = app
+
+# Files to omit from coverage
+omit =
+    */tests/*
+    */test_*.py
+    */__pycache__/*
+    */.venv/*
+    */venv/*
+    */virtualenv/*
+    */site-packages/*
+    */migrations/*
+    */alembic/*
+    setup.py
+    run.py
+
+# Measure branch coverage in addition to statement coverage
+branch = True
+
+# Plugins
+plugins =
+
+[report]
+# Precision for coverage percentages
+precision = 2
+
+# Show missing lines in report
+show_missing = True
+
+# Skip empty files
+skip_empty = True
+
+# Skip covered files (useful for focusing on gaps)
+# skip_covered = False
+
+# Fail if coverage is below this percentage
+# fail_under = 80
+
+# Exclude lines from coverage
+exclude_lines =
+    # Standard pragma
+    pragma: no cover
+
+    # Don't complain about missing debug code
+    def __repr__
+    def __str__
+
+    # Don't complain if tests don't hit defensive assertion code
+    raise AssertionError
+    raise NotImplementedError
+
+    # Don't complain if non-runnable code isn't run
+    if __name__ == .__main__.:
+    if TYPE_CHECKING:
+    if typing.TYPE_CHECKING:
+
+    # Don't complain about abstract methods
+    @abstract
+    @abstractmethod
+
+    # Don't complain about pass statements
+    pass
+
+    # Don't complain about ellipsis
+    \.\.\.
+
+[html]
+# Directory for HTML report
+directory = htmlcov
+
+# Title for HTML report
+title = IOMETE Autoloader Coverage Report
+
+[xml]
+# File for XML report (for CI/CD)
+output = coverage.xml
+
+[json]
+# File for JSON report
+output = coverage.json
