@@ -40,11 +40,11 @@ class TestBasicS3JsonIngestion:
 
         data = response.json()
         assert "id" in data, "Response should contain ingestion ID"
-        assert data["status"] == "DRAFT", f"Expected DRAFT status, got {data['status']}"
+        assert data["status"] == "draft", f"Expected draft status, got {data['status']}"
         assert data["name"] == sample_ingestion_config["name"]
-        assert data["source_type"] == sample_ingestion_config["source_type"]
-        assert data["format_type"] == sample_ingestion_config["format_type"]
-        assert data["schedule_mode"] == "MANUAL"
+        assert data["source"]["type"] == sample_ingestion_config["source"]["type"]
+        assert data["format"]["type"] == sample_ingestion_config["format"]["type"]
+        assert data["schedule"]["mode"] == sample_ingestion_config["schedule"]["mode"]
 
         # Store ingestion ID for subsequent tests
         return data["id"]
@@ -79,7 +79,7 @@ class TestBasicS3JsonIngestion:
         assert update_response.status_code == 200, f"Expected 200, got {update_response.status_code}"
 
         data = update_response.json()
-        assert data["status"] == "ACTIVE", f"Expected ACTIVE status, got {data['status']}"
+        assert data["status"] == "active", f"Expected active status, got {data['status']}"
         assert data["id"] == ingestion_id
 
     def test_trigger_manual_run(
@@ -117,7 +117,7 @@ class TestBasicS3JsonIngestion:
 
         data = run_response.json()
         assert "run_id" in data, "Response should contain run_id"
-        assert data["status"] in ["RUNNING", "PENDING"], f"Unexpected status: {data['status']}"
+        assert data["status"] in ["accepted"], f"Unexpected status: {data['status']}"
 
         return {
             "ingestion_id": ingestion_id,
@@ -177,30 +177,31 @@ class TestBasicS3JsonIngestion:
             run_data = status_response.json()
             current_status = run_data["status"]
 
-            if current_status in ["COMPLETED", "FAILED", "ERROR"]:
+            if current_status in ["success", "failed", "partial"]:
                 final_status = current_status
                 break
 
             time.sleep(poll_interval)
 
         # Assertions on final state
-        assert final_status == "COMPLETED", f"Expected COMPLETED, got {final_status}"
+        assert final_status == "success", f"Expected success, got {final_status}"
 
         # Verify metrics (with mock, these should match mock values)
-        assert run_data["files_processed"] == 3, f"Expected 3 files, got {run_data['files_processed']}"
-        assert run_data["records_ingested"] == 3000, f"Expected 3000 records, got {run_data['records_ingested']}"
+        assert run_data["metrics"]["files_processed"] == 3, f"Expected 3 files, got {run_data['metrics']['files_processed']}"
+        assert run_data["metrics"]["records_ingested"] == 3000, f"Expected 3000 records, got {run_data['metrics']['records_ingested']}"
         assert run_data["errors"] == [] or run_data["errors"] is None
-        assert run_data["duration_seconds"] > 0
+        assert run_data["metrics"]["duration_seconds"] > 0
 
         # Step 5: Verify run history
         history_response = api_client.get(f"/api/v1/ingestions/{ingestion_id}/runs")
         assert history_response.status_code == 200
 
         history_data = history_response.json()
-        assert "runs" in history_data
-        assert len(history_data["runs"]) >= 1
-        assert history_data["runs"][0]["id"] == run_id
-        assert history_data["runs"][0]["status"] == "COMPLETED"
+        assert "runs" in history_data or isinstance(history_data, list)
+        runs = history_data if isinstance(history_data, list) else history_data["runs"]
+        assert len(runs) >= 1
+        assert runs[0]["id"] == run_id
+        assert runs[0]["status"] == "success"
 
     @pytest.mark.requires_spark
     @pytest.mark.slow
@@ -262,21 +263,21 @@ class TestBasicS3JsonIngestion:
             run_data = status_response.json()
             current_status = run_data["status"]
 
-            if current_status in ["COMPLETED", "FAILED", "ERROR"]:
+            if current_status in ["success", "failed", "partial"]:
                 final_status = current_status
                 break
 
             time.sleep(poll_interval)
 
         # Assertions
-        assert final_status == "COMPLETED", f"Run failed with status: {final_status}"
+        assert final_status == "success", f"Run failed with status: {final_status}"
         assert run_data is not None
 
         # Verify metrics from real execution
-        assert run_data["files_processed"] == test_data_s3["num_files"]
-        assert run_data["records_ingested"] == test_data_s3["total_records"]
-        assert run_data["bytes_read"] > 0
-        assert run_data["duration_seconds"] > 0
+        assert run_data["metrics"]["files_processed"] == test_data_s3["num_files"]
+        assert run_data["metrics"]["records_ingested"] == test_data_s3["total_records"]
+        assert run_data["metrics"]["bytes_read"] > 0
+        assert run_data["metrics"]["duration_seconds"] > 0
         assert run_data["errors"] == [] or run_data["errors"] is None
 
         # Step 5: Verify data in Iceberg table (requires Spark Connect client)
@@ -359,7 +360,7 @@ class TestBasicS3JsonIngestion:
 
         assert data["id"] == ingestion_id
         assert data["name"] == sample_ingestion_config["name"]
-        assert data["source_type"] == sample_ingestion_config["source_type"]
+        assert data["source"]["type"] == sample_ingestion_config["source"]["type"]
         assert "created_at" in data
         assert "updated_at" in data
 
@@ -420,12 +421,12 @@ class TestBasicS3JsonIngestion:
         # Pause ingestion
         pause_response = api_client.post(f"/api/v1/ingestions/{ingestion_id}/pause")
         assert pause_response.status_code == 200
-        assert pause_response.json()["status"] == "PAUSED"
+        assert pause_response.json()["status"] == "paused"
 
         # Resume ingestion
         resume_response = api_client.post(f"/api/v1/ingestions/{ingestion_id}/resume")
         assert resume_response.status_code == 200
-        assert resume_response.json()["status"] == "ACTIVE"
+        assert resume_response.json()["status"] == "active"
 
     def test_run_history_pagination(
         self,

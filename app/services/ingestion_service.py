@@ -212,8 +212,11 @@ class IngestionService:
         from app.models.schemas import (
             SourceConfig,
             FormatConfig,
+            FormatOptions,
+            SchemaConfig,
             DestinationConfig,
             ScheduleConfig,
+            BackfillConfig,
             QualityConfig,
             PartitioningConfig,
             OptimizationConfig,
@@ -234,7 +237,12 @@ class IngestionService:
             ),
             format=FormatConfig(
                 type=ingestion.format_type,
-                options=ingestion.format_options,
+                options=FormatOptions(**ingestion.format_options) if ingestion.format_options else None,
+                schema=SchemaConfig(
+                    inference=ingestion.schema_inference,
+                    evolution_enabled=ingestion.schema_evolution_enabled,
+                    schema_json=ingestion.schema_json,
+                ),
             ),
             destination=DestinationConfig(
                 catalog=ingestion.destination_catalog,
@@ -256,6 +264,10 @@ class IngestionService:
                 time=ingestion.schedule_time,
                 timezone=ingestion.schedule_timezone,
                 cron_expression=ingestion.schedule_cron,
+                backfill=BackfillConfig(
+                    enabled=ingestion.backfill_enabled,
+                    start_date=ingestion.backfill_start_date,
+                ),
             ),
             quality=QualityConfig(
                 row_count_threshold=ingestion.row_count_threshold,

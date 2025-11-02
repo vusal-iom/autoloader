@@ -260,31 +260,61 @@ def mock_spark_executor(monkeypatch):
 def sample_ingestion_config(test_config: Dict[str, Any], test_data_s3: Dict[str, Any]) -> Dict[str, Any]:
     """
     Sample ingestion configuration for testing
+    Matches the IngestionCreate schema structure
     """
     return {
-        "tenant_id": test_config["tenant_id"],
         "name": "E2E Test S3 JSON Ingestion",
         "cluster_id": test_config["cluster_id"],
-        "spark_connect_url": test_config["spark_connect_url"],
-        "spark_connect_token": test_config["spark_connect_token"],
-        "source_type": "S3",
-        "source_path": f"s3a://{test_data_s3['bucket']}/{test_data_s3['prefix']}",
-        "source_file_pattern": "*.json",
-        "source_credentials": {
-            "aws_access_key_id": test_data_s3["access_key"],
-            "aws_secret_access_key": test_data_s3["secret_key"],
-            "endpoint_url": test_data_s3["endpoint"]
+        "source": {
+            "type": "s3",
+            "path": f"s3a://{test_data_s3['bucket']}/{test_data_s3['prefix']}",
+            "file_pattern": "*.json",
+            "credentials": {
+                "aws_access_key_id": test_data_s3["access_key"],
+                "aws_secret_access_key": test_data_s3["secret_key"],
+                "endpoint_url": test_data_s3["endpoint"]
+            }
         },
-        "format_type": "JSON",
-        "format_options": {
-            "multiline": False
+        "format": {
+            "type": "json",
+            "options": {
+                "multiline": False
+            },
+            "schema": {
+                "inference": "auto",
+                "evolution_enabled": True
+            }
         },
-        "schema_handling": "INFER",
-        "destination_catalog": "test_catalog",
-        "destination_database": "test_db",
-        "destination_table": "e2e_test_table",
-        "write_mode": "APPEND",
-        "schedule_mode": "MANUAL"
+        "destination": {
+            "catalog": "test_catalog",
+            "database": "test_db",
+            "table": "e2e_test_table",
+            "write_mode": "append",
+            "partitioning": {
+                "enabled": False,
+                "columns": []
+            },
+            "optimization": {
+                "z_ordering_enabled": False,
+                "z_ordering_columns": []
+            }
+        },
+        "schedule": {
+            "mode": "scheduled",
+            "frequency": "daily",
+            "time": None,
+            "timezone": "UTC",
+            "cron_expression": None,
+            "backfill": {
+                "enabled": False,
+                "start_date": None
+            }
+        },
+        "quality": {
+            "row_count_threshold": None,
+            "alerts_enabled": True,
+            "alert_recipients": []
+        }
     }
 
 
