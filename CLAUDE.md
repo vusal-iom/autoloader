@@ -6,63 +6,22 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This is the IOMETE Autoloader project - a zero-code, UI-driven data ingestion system. Currently in the planning phase with comprehensive documentation and UI mockups ready for implementation.
 
-## Key Documentation
+## User request
 
-- **PRD**: `docs/ingestion-prd-v1.md` - Complete product requirements (1355+ lines)
-- **Architecture**: `docs/ingestion-prd-using-connect.md` - Spark Connect architecture design
-- **UI/UX Specs**: `docs/autoloaderv1.md` - Visual design specifications
-- **Data Models**: `docs/code-examples/version1.py` - Python API models using Pydantic/SQLAlchemy
-- **UI Mockups**: `docs/mocks/` - Interactive HTML prototypes
+### Ingestion
 
-## Architecture Overview
+For the jobs I’m writing, I import data from AWS S3 into our data lake. I have AWS, Snyk just dump their output there for now.
+Right now, I write custom Spark code to list, fetch, and import these. This is quite a bit of work to properly test and even debug Spark.
+What I’d really like is **a simple scheduled ingestion**: check an S3 bucket, Azure Blob, GCS, or FTP hourly, daily, or on whatever schedule, and automatically load new files into a table — no Spark code or extra effort from the user.
+As Shafi mentioned: making this easy for such a common use case could boost usage in existing customers.
+Fuad did point out we have a **marketplace streaming Job** for this, but this would be up and running all the time — while most of my files come in daily or less frequently — so a scheduled approach would save resources and simplify things.
+Even then, the job makes the UX clunkier than just a simple UI to configure a file ingestion (which underneath can be a job).
 
-### Core Components
-1. **Ingestion Service**: Core business logic (Python/FastAPI)
-2. **Spark Connect**: Remote job execution without JAR deployment
-3. **Database**: PostgreSQL for metadata storage
-4. **Storage**: Multi-cloud support (S3, Azure Blob, GCS)
 
-### Technology Stack
+## Tech stack
+
 - **Backend**: Python, FastAPI, SQLAlchemy, Pydantic
-- **Processing**: Apache Spark with Delta Lake
-- **Frontend**: React (planned)
-- **Database**: PostgreSQL
+- **Processing**: Apache Spark with Iceberg
+- **Mock frontend**: Self-contained HTML
 
-### Key Patterns
-- Repository pattern for data access
-- Strategy pattern for cloud storage providers
-- Builder pattern for Spark job generation
-- Event-driven schema evolution detection
-
-## Development Commands
-
-**Note**: This project is in planning phase. No build/test commands are configured yet.
-
-When implementation begins, expected commands will be:
-- Python virtual environment setup
-- FastAPI development server
-- Spark Connect integration tests
-- Database migrations
-
-## API Design
-
-The planned API structure (see `docs/code-examples/version1.py`):
-- RESTful endpoints for ingestion management
-- Comprehensive data models for all entities
-- Support for S3, Azure Blob, and GCS configurations
-- Schema evolution tracking
-
-## Important Considerations
-
-1. **Multi-tenancy**: Each lakehouse gets isolated ingestion jobs
-2. **Cost Estimation**: Built-in cost prediction before job execution
-3. **Schema Evolution**: Automatic detection and user approval workflow
-4. **Performance**: Optimized for datasets 100GB-10TB daily
-5. **Security**: Service account authentication, no credentials storage
-
-## Current Status
-
-- Phase 0: Planning (Complete)
-- Phase 1: MVP Implementation (Ready to start)
-- Phase 2: Production Features (Months 4-6)
-- Phase 3: Advanced Features (Months 7-12)
+## 
