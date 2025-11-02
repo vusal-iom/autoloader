@@ -23,5 +23,4 @@ Even then, the job makes the UX clunkier than just a simple UI to configure a fi
 - **Backend**: Python, FastAPI, SQLAlchemy, Pydantic
 - **Processing**: Apache Spark with Iceberg
 - **Mock frontend**: Self-contained HTML
-
-## 
+- **Database**: PostgreSQL (sqllite for development) 
