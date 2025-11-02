@@ -72,7 +72,7 @@ class TestBasicS3JsonIngestion:
         # Activate ingestion
         update_response = api_client.put(
             f"/api/v1/ingestions/{ingestion_id}",
-            json={"status": "ACTIVE"}
+            json={"status": "active"}
         )
 
         # Assertions
@@ -106,7 +106,7 @@ class TestBasicS3JsonIngestion:
 
         api_client.put(
             f"/api/v1/ingestions/{ingestion_id}",
-            json={"status": "ACTIVE"}
+            json={"status": "active"}
         )
 
         # Trigger manual run
@@ -154,7 +154,7 @@ class TestBasicS3JsonIngestion:
         # Step 2: Activate ingestion
         activate_response = api_client.put(
             f"/api/v1/ingestions/{ingestion_id}",
-            json={"status": "ACTIVE"}
+            json={"status": "active"}
         )
         assert activate_response.status_code == 200
 
@@ -238,7 +238,7 @@ class TestBasicS3JsonIngestion:
         # Step 2: Activate ingestion
         activate_response = api_client.put(
             f"/api/v1/ingestions/{ingestion_id}",
-            json={"status": "ACTIVE"}
+            json={"status": "active"}
         )
         assert activate_response.status_code == 200
 
@@ -415,7 +415,7 @@ class TestBasicS3JsonIngestion:
 
         api_client.put(
             f"/api/v1/ingestions/{ingestion_id}",
-            json={"status": "ACTIVE"}
+            json={"status": "active"}
         )
 
         # Pause ingestion

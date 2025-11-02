@@ -116,6 +116,7 @@ class IngestionCreate(BaseModel):
 
 class IngestionUpdate(BaseModel):
     """Update ingestion request."""
+    status: Optional[IngestionStatus] = None
     schedule: Optional[ScheduleConfig] = None
     quality: Optional[QualityConfig] = None
     alert_recipients: Optional[List[str]] = None

@@ -132,6 +132,10 @@ class IngestionService:
             return None
 
         # Update allowed fields
+        if updates.status:
+            ingestion.status = updates.status
+            # TODO: Handle status-specific logic (start/stop scheduler, etc.)
+
         if updates.schedule:
             ingestion.schedule_frequency = updates.schedule.frequency
             ingestion.schedule_time = updates.schedule.time
