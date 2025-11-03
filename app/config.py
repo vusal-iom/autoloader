@@ -21,6 +21,7 @@ class Settings(BaseSettings):
 
     # Spark Connect
     spark_connect_default_port: int = 15002
+    test_spark_connect_token: str = ""  # For testing: leave empty or set token
     spark_session_pool_size: int = 10
     spark_session_idle_timeout: int = 1800  # 30 minutes
 
@@ -49,3 +50,39 @@ class Settings(BaseSettings):
 def get_settings() -> Settings:
     """Get cached settings instance."""
     return Settings()
+
+
+def get_spark_connect_url(cluster_id: str) -> str:
+    """
+    Get Spark Connect URL for a given cluster ID.
+
+    TODO: Before production, implement proper cluster lookup:
+    - Query IOMETE cluster management API
+    - Map cluster_id to actual cluster endpoint
+    - Handle cluster not found errors
+    - Support multiple environments (dev/staging/prod)
+
+    For now it returns local one
+    """
+    return "sc://localhost:15002"
+
+
+def get_spark_connect_credentials(cluster_id: str) -> tuple[str, str]:
+    """
+    Get Spark Connect URL and token for a given cluster ID.
+
+    TODO: Before production, implement proper cluster credential lookup:
+    - Query IOMETE cluster management API
+    - Retrieve authentication token from secure storage
+    - Handle token refresh and expiration
+    - Support different auth methods per environment
+
+    For now: Returns localhost URL and test token.
+
+    Returns:
+        tuple[str, str]: (spark_connect_url, spark_connect_token)
+    """
+    settings = get_settings()
+    url = get_spark_connect_url(cluster_id)
+    token = settings.test_spark_connect_token or ""
+    return url, token

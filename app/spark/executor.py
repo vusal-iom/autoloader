@@ -3,6 +3,7 @@ from typing import Dict, Any
 from datetime import datetime
 from app.models.domain import Ingestion
 from app.spark.session_manager import get_session_pool
+from app.config import get_spark_connect_credentials
 
 
 class IngestionExecutor:
@@ -24,11 +25,14 @@ class IngestionExecutor:
         """
         client = None
         try:
+            # Get Spark Connect credentials dynamically from cluster_id
+            spark_url, spark_token = get_spark_connect_credentials(ingestion.cluster_id)
+
             # Get Spark Connect client from pool
             client = self.session_pool.get_client(
                 cluster_id=ingestion.cluster_id,
-                connect_url=ingestion.spark_connect_url,
-                token=ingestion.spark_connect_token,  # TODO: Decrypt
+                connect_url=spark_url,
+                token=spark_token,
             )
 
             # Build format options

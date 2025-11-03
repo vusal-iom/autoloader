@@ -2,6 +2,7 @@
 from typing import Dict, Any
 from app.models.schemas import IngestionCreate, PreviewResult, ColumnSchema
 from app.spark.executor import IngestionExecutor
+from app.config import get_spark_connect_credentials
 
 
 class SparkService:
@@ -21,10 +22,13 @@ class SparkService:
             PreviewResult with schema and sample data
         """
         # Convert Pydantic model to dict for executor
+        # Get Spark connection credentials dynamically
+        spark_url, spark_token = get_spark_connect_credentials(config.cluster_id)
+
         ingestion_dict = {
             "cluster_id": config.cluster_id,
-            "spark_connect_url": f"sc://{config.cluster_id}.iomete.com:15002",
-            "spark_connect_token": "mock_token",  # TODO: Get actual token
+            "spark_connect_url": spark_url,
+            "spark_connect_token": spark_token,
             "source": {
                 "path": config.source.path,
                 "type": config.source.type,

@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from typing import List
 
 from app.models.schemas import ClusterInfo
+from app.config import get_spark_connect_url
 
 router = APIRouter(prefix="/clusters", tags=["clusters"])
 
@@ -29,7 +30,7 @@ async def list_clusters(
             status="running",
             workers=8,
             dbu_per_worker=8,
-            spark_connect_url="sc://cluster-prod-01.iomete.com:15002",
+            spark_connect_url=get_spark_connect_url("cluster-prod-01"),
             pricing={"dbu_rate": 0.40},
         ),
         ClusterInfo(
@@ -38,7 +39,7 @@ async def list_clusters(
             status="running",
             workers=4,
             dbu_per_worker=8,
-            spark_connect_url="sc://cluster-analytics-02.iomete.com:15002",
+            spark_connect_url=get_spark_connect_url("cluster-analytics-02"),
             pricing={"dbu_rate": 0.40},
         ),
     ]
@@ -59,7 +60,7 @@ async def get_cluster(cluster_id: str):
             status="running",
             workers=8,
             dbu_per_worker=8,
-            spark_connect_url="sc://cluster-prod-01.iomete.com:15002",
+            spark_connect_url=get_spark_connect_url("cluster-prod-01"),
             pricing={"dbu_rate": 0.40},
         )
     raise HTTPException(

@@ -35,8 +35,8 @@ class Ingestion(Base):
 
     # Cluster information
     cluster_id = Column(String, nullable=False)
-    spark_connect_url = Column(String, nullable=False)
-    spark_connect_token = Column(Text, nullable=False)  # Encrypted
+    # Note: spark_connect_url and spark_connect_token are retrieved dynamically
+    # from cluster_id at runtime via get_spark_connect_url() and cluster API
 
     # Source configuration
     source_type = Column(String, nullable=False)  # s3, azure_blob, gcs

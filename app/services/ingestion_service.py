@@ -17,7 +17,7 @@ from app.repositories.ingestion_repository import IngestionRepository
 from app.repositories.run_repository import RunRepository
 from app.services.spark_service import SparkService
 from app.services.cost_estimator import CostEstimator
-from app.config import get_settings
+from app.config import get_settings, get_spark_connect_url
 
 settings = get_settings()
 
@@ -49,21 +49,14 @@ class IngestionService:
         # Generate checkpoint location
         checkpoint_location = f"{settings.checkpoint_base_path}{tenant_id}/{ingestion_id}/"
 
-        # Get Spark Connect URL from cluster
-        spark_connect_url = f"sc://{data.cluster_id}.iomete.com:{settings.spark_connect_default_port}"
-
-        # TODO: Get and encrypt Spark Connect token
-        spark_connect_token = "encrypted_token_here"
-
         # Create domain model
+        # Note: spark_connect_url and token are retrieved at runtime from cluster_id
         ingestion = Ingestion(
             id=ingestion_id,
             tenant_id=tenant_id,
             name=data.name,
             status=IngestionStatus.DRAFT,
             cluster_id=data.cluster_id,
-            spark_connect_url=spark_connect_url,
-            spark_connect_token=spark_connect_token,
             # Source
             source_type=data.source.type,
             source_path=data.source.path,
@@ -232,7 +225,7 @@ class IngestionService:
             name=ingestion.name,
             status=ingestion.status,
             cluster_id=ingestion.cluster_id,
-            spark_connect_url=ingestion.spark_connect_url,
+            spark_connect_url=get_spark_connect_url(ingestion.cluster_id),  # Computed dynamically
             source=SourceConfig(
                 type=ingestion.source_type,
                 path=ingestion.source_path,
