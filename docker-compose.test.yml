@@ -42,10 +42,53 @@ services:
     networks:
       - test_network
 
+  spark-connect:
+    image: apache/spark:3.5.0-scala2.12-java11-python3-ubuntu
+    container_name: autoloader-test-spark-connect
+    user: root
+    ports:
+      - "15002:15002"  # Spark Connect port
+      - "4040:4040"    # Spark UI
+    environment:
+      # S3/MinIO Configuration
+      - AWS_ACCESS_KEY_ID=minioadmin
+      - AWS_SECRET_ACCESS_KEY=minioadmin
+      - AWS_REGION=us-east-1
+      - SPARK_NO_DAEMONIZE=true
+    command: >
+      bash -c "
+      /opt/spark/sbin/start-connect-server.sh
+      --properties-file /opt/spark/conf/spark-defaults.conf
+      --packages org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.4.3,org.apache.hadoop:hadoop-aws:3.3.4,org.apache.spark:spark-connect_2.12:3.5.0
+      && tail -f /opt/spark/logs/spark--org.apache.spark.sql.connect.service.SparkConnectServer-1-*.out
+      "
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4040"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    volumes:
+      - spark_warehouse:/opt/spark/warehouse
+      - spark_checkpoints:/tmp/checkpoints
+      - spark_ivy_cache:/home/spark/.ivy2
+      - ./docker-spark-defaults.conf:/opt/spark/conf/spark-defaults.conf:ro
+    depends_on:
+      minio:
+        condition: service_healthy
+    networks:
+      - test_network
+
 volumes:
   minio_test_data:
     driver: local
   postgres_test_data:
+    driver: local
+  spark_warehouse:
+    driver: local
+  spark_checkpoints:
+    driver: local
+  spark_ivy_cache:
     driver: local
 
 networks:

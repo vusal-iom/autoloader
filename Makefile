@@ -4,24 +4,27 @@ help:
 	@echo "IOMETE Autoloader - Available Commands:"
 	@echo ""
 	@echo "Setup & Installation:"
-	@echo "  make install         - Install all dependencies"
-	@echo "  make setup-test      - Start test infrastructure (MinIO, PostgreSQL)"
-	@echo "  make teardown-test   - Stop and clean test infrastructure"
+	@echo "  make install            - Install all dependencies"
+	@echo "  make setup-test         - Start test infrastructure (MinIO, PostgreSQL, Spark)"
+	@echo "  make test-spark-connect - Verify Spark Connect connectivity"
+	@echo "  make test-spark-logs    - Show Spark Connect logs"
+	@echo "  make teardown-test      - Stop and clean test infrastructure"
 	@echo ""
 	@echo "Testing:"
-	@echo "  make test            - Run all tests (except slow/Spark-dependent)"
-	@echo "  make test-unit       - Run unit tests only"
-	@echo "  make test-integration- Run integration tests only"
-	@echo "  make test-e2e        - Run E2E tests only"
-	@echo "  make test-all        - Run ALL tests including slow tests"
-	@echo "  make test-cov        - Run tests with coverage report"
-	@echo "  make test-watch      - Run tests in watch mode"
+	@echo "  make test               - Run all tests (except slow/Spark-dependent)"
+	@echo "  make test-unit          - Run unit tests only"
+	@echo "  make test-integration   - Run integration tests only"
+	@echo "  make test-e2e           - Run E2E tests (without Spark)"
+	@echo "  make test-e2e-full      - Run E2E tests (with Spark)"
+	@echo "  make test-all           - Run ALL tests including slow tests"
+	@echo "  make test-cov           - Run tests with coverage report"
+	@echo "  make test-watch         - Run tests in watch mode"
 	@echo ""
 	@echo "Development:"
-	@echo "  make run             - Run the application"
-	@echo "  make clean           - Clean up generated files"
-	@echo "  make format          - Format code (black, isort)"
-	@echo "  make lint            - Lint code (flake8, pylint)"
+	@echo "  make run                - Run the application"
+	@echo "  make clean              - Clean up generated files"
+	@echo "  make format             - Format code (black, isort)"
+	@echo "  make lint               - Lint code (flake8, pylint)"
 	@echo ""
 
 install:
@@ -31,11 +34,23 @@ setup-test:
 	@echo "Starting test infrastructure..."
 	docker-compose -f docker-compose.test.yml up -d
 	@echo "Waiting for services to be healthy..."
-	@sleep 5
+	@sleep 10
 	@echo "Test infrastructure is ready!"
 	@echo ""
 	@echo "MinIO Console: http://localhost:9001 (minioadmin/minioadmin)"
 	@echo "PostgreSQL: localhost:5432 (test_user/test_password)"
+	@echo "Spark Connect: sc://localhost:15002"
+	@echo "Spark UI: http://localhost:4040"
+	@echo ""
+	@echo "Run 'make test-spark-connect' to verify Spark connectivity"
+
+test-spark-connect:
+	@echo "Testing Spark Connect connectivity..."
+	python scripts/test_spark_connect.py
+
+test-spark-logs:
+	@echo "Showing Spark Connect logs..."
+	docker logs -f autoloader-test-spark-connect
 
 teardown-test:
 	@echo "Stopping test infrastructure..."
