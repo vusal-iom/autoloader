@@ -7,13 +7,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 IOMETE Autoloader is a zero-code, UI-driven data ingestion system that enables users to automatically load files from cloud storage (AWS S3, Azure Blob, GCS) into Apache Iceberg tables without writing Spark code. The project is currently in early implementation phase (MVP) with comprehensive documentation and architecture in place.
 
 **Key Features:**
-- Scheduled batch ingestion (hourly, daily, custom cron)
+- Scheduled batch ingestion (hourly, daily, custom cron) using Spark's availableNow trigger
 - Multi-cloud support (S3, Azure Blob, GCS)
 - Auto schema inference and evolution detection
 - Cost estimation and transparency
 - Preview/test mode before activation
 - Real-time monitoring with run history
 - No-code UI configuration wizard
+- Resource-efficient: cluster only used during scheduled execution windows
 
 ## User Request Context
 
@@ -133,7 +134,7 @@ app/
 - Format: format_type (JSON/CSV/PARQUET/AVRO/ORC), format_options, schema handling
 - Destination: catalog/database/table, write_mode (APPEND/OVERWRITE)
 - Optimization: partitioning, z-ordering
-- Schedule: schedule_mode (SCHEDULED/CONTINUOUS), frequency, cron_expression, timezone
+- Schedule: frequency (daily/hourly/weekly/custom), cron_expression, timezone (batch mode only)
 - Quality: thresholds, alerts
 - Metadata: checkpoint_location, run tracking, estimated_cost
 
@@ -178,11 +179,13 @@ app/
 - `connect()` - Establish Spark Connect session with cloud credentials
 - `test_connection()` - Verify connectivity and Spark version
 - `read_stream()` - Create Auto Loader streaming DataFrame with cloudFiles
-- `write_stream()` - Write to Iceberg table with trigger control
+- `write_stream()` - Write to Iceberg table (always uses availableNow trigger for batch processing)
 - `preview_files()` - Sample data preview with schema inference
 - Cloud credential configuration (S3, Azure, GCS)
 
 **Supported Formats:** JSON, CSV, Parquet, Avro, ORC with format-specific options
+
+**Execution Mode:** Batch processing with Spark's availableNow trigger - processes all available data incrementally using checkpoints, then automatically terminates. Not continuous streaming.
 
 ### Cost Estimator (app/services/cost_estimator.py)
 

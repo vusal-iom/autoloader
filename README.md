@@ -176,7 +176,7 @@ STORAGE_COST_PER_GB=0.023
 
 1. **Create Configuration**: Define source, format, destination, and schedule
 2. **Preview**: Test with sample data before activating
-3. **Activate**: Start scheduled or continuous ingestion
+3. **Activate**: Start scheduled batch ingestion (processes available data then stops)
 4. **Monitor**: Track runs, metrics, and health
 5. **Manage**: Pause, resume, edit, or delete
 

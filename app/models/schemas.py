@@ -85,8 +85,7 @@ class BackfillConfig(BaseModel):
 
 
 class ScheduleConfig(BaseModel):
-    """Schedule configuration schema."""
-    mode: str = Field(default="scheduled", description="scheduled or continuous")
+    """Schedule configuration schema (batch mode - processes available data then stops)."""
     frequency: Optional[str] = Field(None, description="daily, hourly, weekly, custom")
     time: Optional[str] = None
     timezone: str = "UTC"

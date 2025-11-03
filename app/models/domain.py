@@ -61,8 +61,7 @@ class Ingestion(Base):
     z_ordering_enabled = Column(Boolean, default=False)
     z_ordering_columns = Column(JSON, nullable=True)
 
-    # Schedule configuration
-    schedule_mode = Column(String, default="scheduled")  # scheduled, continuous
+    # Schedule configuration (batch mode only - processes available data then stops)
     schedule_frequency = Column(String, nullable=True)  # daily, hourly, weekly, custom
     schedule_time = Column(String, nullable=True)
     schedule_timezone = Column(String, default="UTC")

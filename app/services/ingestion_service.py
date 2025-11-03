@@ -77,8 +77,7 @@ class IngestionService:
             partitioning_columns=data.destination.partitioning.columns if data.destination.partitioning else None,
             z_ordering_enabled=data.destination.optimization.z_ordering_enabled if data.destination.optimization else False,
             z_ordering_columns=data.destination.optimization.z_ordering_columns if data.destination.optimization else None,
-            # Schedule
-            schedule_mode=data.schedule.mode,
+            # Schedule (batch mode only)
             schedule_frequency=data.schedule.frequency,
             schedule_time=data.schedule.time,
             schedule_timezone=data.schedule.timezone,
@@ -176,15 +175,15 @@ class IngestionService:
         return run_id
 
     def pause_ingestion(self, ingestion_id: str) -> bool:
-        """Pause an active ingestion."""
+        """Pause an active ingestion (stops scheduler from triggering new runs)."""
         result = self.ingestion_repo.update_status(ingestion_id, IngestionStatus.PAUSED)
-        # TODO: Stop streaming query if continuous mode
+        # TODO: Unregister scheduled job from scheduler
         return result is not None
 
     def resume_ingestion(self, ingestion_id: str) -> bool:
-        """Resume a paused ingestion."""
+        """Resume a paused ingestion (re-registers with scheduler)."""
         result = self.ingestion_repo.update_status(ingestion_id, IngestionStatus.ACTIVE)
-        # TODO: Restart streaming query if continuous mode
+        # TODO: Re-register scheduled job with scheduler
         return result is not None
 
     def preview_ingestion(self, data: IngestionCreate) -> PreviewResult:
@@ -256,7 +255,6 @@ class IngestionService:
                 ),
             ),
             schedule=ScheduleConfig(
-                mode=ingestion.schedule_mode,
                 frequency=ingestion.schedule_frequency,
                 time=ingestion.schedule_time,
                 timezone=ingestion.schedule_timezone,

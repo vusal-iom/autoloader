@@ -51,32 +51,24 @@ class IngestionExecutor:
             # Apply any transformations (future enhancement)
             # df = self._apply_transformations(df, ingestion)
 
-            # Determine trigger mode
-            trigger_mode = (
-                "availableNow"
-                if ingestion.schedule_mode == "scheduled"
-                else "processingTime:10 seconds"
-            )
-
             # Build target table name
             target_table = f"{ingestion.destination_catalog}.{ingestion.destination_database}.{ingestion.destination_table}"
 
-            # Write stream
+            # Write stream with availableNow trigger (batch mode - processes all available data then stops)
             query = client.write_stream(
                 df=df,
                 target_table=target_table,
                 checkpoint_location=ingestion.checkpoint_location,
                 write_mode=ingestion.write_mode,
                 partition_columns=ingestion.partitioning_columns if ingestion.partitioning_enabled else None,
-                trigger_mode=trigger_mode,
+                trigger_mode="availableNow",
             )
 
-            # Monitor query execution
-            metrics = self._monitor_query(query)
+            # Wait for completion (availableNow automatically terminates when all data is processed)
+            query.awaitTermination()
 
-            # Wait for completion if in batch mode
-            if trigger_mode == "availableNow":
-                query.awaitTermination()
+            # Collect metrics after completion
+            metrics = self._monitor_query(query)
 
             return {
                 "success": True,
