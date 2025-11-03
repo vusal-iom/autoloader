@@ -218,16 +218,13 @@ def spark_connect_available() -> bool:
     if not spark_url:
         return False
 
-    # TODO: Add actual connectivity test
-    # from app.spark.connect_client import SparkConnectClient
-    # try:
-    #     client = SparkConnectClient(spark_url)
-    #     client.test_connection()
-    #     return True
-    # except Exception:
-    #     return False
-
-    return False
+    from app.spark.connect_client import SparkConnectClient
+    try:
+        client = SparkConnectClient(spark_url, "")
+        client.test_connection()
+        return True
+    except Exception:
+        return False
 
 
 @pytest.fixture(scope="function")
