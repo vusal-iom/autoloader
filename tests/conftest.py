@@ -231,32 +231,6 @@ def spark_connect_available() -> bool:
 
 
 @pytest.fixture(scope="function")
-def mock_spark_executor(monkeypatch):
-    """
-    Mock Spark executor for tests that don't need real Spark
-
-    This allows tests to run without a real Spark cluster
-    """
-    mock_run_result = {
-        "status": "COMPLETED",
-        "files_processed": 3,
-        "records_ingested": 3000,
-        "bytes_read": 1048576,
-        "bytes_written": 950000,
-        "duration_seconds": 150,
-        "spark_job_id": "test-job-123"
-    }
-
-    # Create a mock that returns the expected result
-    mock = MagicMock(return_value=mock_run_result)
-
-    # TODO: Patch the actual executor when implemented
-    # monkeypatch.setattr("app.spark.executor.run_ingestion", mock)
-
-    return mock
-
-
-@pytest.fixture(scope="function")
 def sample_ingestion_config(test_config: Dict[str, Any], test_data_s3: Dict[str, Any]) -> Dict[str, Any]:
     """
     Sample ingestion configuration for testing
