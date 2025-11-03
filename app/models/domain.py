@@ -117,6 +117,20 @@ class Run(Base):
     spark_job_id = Column(String, nullable=True)
     cluster_id = Column(String, nullable=False)
 
+    @property
+    def metrics(self):
+        """Return metrics as a structured object for API serialization."""
+        # Import here to avoid circular dependency
+        from app.models.schemas import RunMetrics
+        return RunMetrics(
+            files_processed=self.files_processed or 0,
+            records_ingested=self.records_ingested or 0,
+            bytes_read=self.bytes_read or 0,
+            bytes_written=self.bytes_written or 0,
+            duration_seconds=self.duration_seconds,
+            error_count=self.error_count or 0
+        )
+
 
 class SchemaVersion(Base):
     """Schema version history model."""
