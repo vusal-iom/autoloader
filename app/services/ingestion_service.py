@@ -151,28 +151,33 @@ class IngestionService:
 
         return self.ingestion_repo.delete(ingestion_id)
 
-    def trigger_manual_run(self, ingestion_id: str) -> str:
-        """Trigger a manual ingestion run."""
+    def trigger_manual_run(self, ingestion_id: str) -> Run:
+        """
+        Trigger a manual ingestion run using batch processing.
+
+        Args:
+            ingestion_id: Ingestion ID
+
+        Returns:
+            Run record
+
+        Raises:
+            ValueError: If ingestion not found or not active
+        """
+        # Load ingestion
         ingestion = self.ingestion_repo.get_by_id(ingestion_id)
         if not ingestion:
-            raise ValueError(f"Ingestion {ingestion_id} not found")
+            raise ValueError(f"Ingestion not found: {ingestion_id}")
 
-        # Create run record
-        run_id = f"run_{uuid.uuid4().hex[:12]}"
-        run = Run(
-            id=run_id,
-            ingestion_id=ingestion_id,
-            started_at=datetime.utcnow(),
-            status=RunStatus.RUNNING,
-            trigger="manual",
-            cluster_id=ingestion.cluster_id,
-        )
-        self.run_repo.create(run)
+        if ingestion.status != IngestionStatus.ACTIVE and ingestion.status != IngestionStatus.DRAFT:
+            raise ValueError(f"Ingestion not active: {ingestion.status}")
 
-        # TODO: Execute ingestion asynchronously via Spark Connect
-        # self.spark_service.execute_ingestion(ingestion, run_id)
+        # Run batch ingestion via orchestrator
+        from app.services.batch_orchestrator import BatchOrchestrator
+        orchestrator = BatchOrchestrator(self.db)
+        run = orchestrator.run_ingestion(ingestion)
 
-        return run_id
+        return run
 
     def pause_ingestion(self, ingestion_id: str) -> bool:
         """Pause an active ingestion (stops scheduler from triggering new runs)."""

@@ -1,8 +1,10 @@
 """SQLAlchemy domain models."""
-from sqlalchemy import Column, String, Integer, Float, Boolean, DateTime, JSON, Text, Enum as SQLEnum
+from sqlalchemy import Column, String, Integer, Float, Boolean, DateTime, JSON, Text, Enum as SQLEnum, BigInteger, ForeignKey, Index
+from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 import enum
 from datetime import datetime
+import uuid
 
 from app.database import Base
 
@@ -21,6 +23,15 @@ class RunStatus(str, enum.Enum):
     SUCCESS = "success"
     FAILED = "failed"
     PARTIAL = "partial"
+
+
+class ProcessedFileStatus(str, enum.Enum):
+    """Status of a processed file."""
+    DISCOVERED = "DISCOVERED"      # File found, not yet processed
+    PROCESSING = "PROCESSING"      # Currently being processed
+    SUCCESS = "SUCCESS"            # Successfully processed
+    FAILED = "FAILED"              # Processing failed (retryable)
+    SKIPPED = "SKIPPED"            # Intentionally skipped
 
 
 class Ingestion(Base):
@@ -87,6 +98,9 @@ class Ingestion(Base):
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
     created_by = Column(String, nullable=False)
 
+    # Relationships
+    processed_files = relationship("ProcessedFile", back_populates="ingestion", cascade="all, delete-orphan")
+
 
 class Run(Base):
     """Ingestion run history model."""
@@ -115,6 +129,9 @@ class Run(Base):
     # Spark job information
     spark_job_id = Column(String, nullable=True)
     cluster_id = Column(String, nullable=False)
+
+    # Relationships
+    processed_files = relationship("ProcessedFile", back_populates="run")
 
     @property
     def metrics(self):
@@ -148,3 +165,66 @@ class SchemaVersion(Base):
     resolution_type = Column(String, nullable=True)  # auto_merge, backfill, ignore, manual
     resolved_at = Column(DateTime, nullable=True)
     resolved_by = Column(String, nullable=True)
+
+
+class ProcessedFile(Base):
+    """
+    Tracks processing state of individual files.
+
+    Each file discovered from cloud storage gets a record here.
+    This is the source of truth for "has this file been processed?"
+    """
+    __tablename__ = "processed_files"
+
+    # Primary key
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+
+    # Foreign keys
+    ingestion_id = Column(String(36), ForeignKey("ingestions.id", ondelete="CASCADE"), nullable=False)
+    run_id = Column(String(36), ForeignKey("runs.id", ondelete="SET NULL"), nullable=True)
+
+    # File identification
+    file_path = Column(Text, nullable=False)  # Full path: s3://bucket/path/to/file.json
+    file_size_bytes = Column(BigInteger, nullable=True)
+    file_modified_at = Column(DateTime(timezone=True), nullable=True)
+    file_etag = Column(String(255), nullable=True)  # S3 ETag for change detection
+
+    # Processing state
+    status = Column(
+        String(20),
+        nullable=False,
+        default="DISCOVERED"
+    )  # DISCOVERED, PROCESSING, SUCCESS, FAILED, SKIPPED
+
+    discovered_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    processing_started_at = Column(DateTime(timezone=True), nullable=True)
+    processed_at = Column(DateTime(timezone=True), nullable=True)
+
+    # Metrics
+    records_ingested = Column(Integer, nullable=True)
+    bytes_read = Column(BigInteger, nullable=True)
+    processing_duration_ms = Column(Integer, nullable=True)
+
+    # Error tracking
+    error_message = Column(Text, nullable=True)
+    error_type = Column(String(100), nullable=True)
+    retry_count = Column(Integer, nullable=False, default=0)
+
+    # Timestamps
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+    # Relationships
+    ingestion = relationship("Ingestion", back_populates="processed_files")
+    run = relationship("Run", back_populates="processed_files")
+
+    # Constraints
+    __table_args__ = (
+        Index("idx_processed_files_ingestion_status", "ingestion_id", "status"),
+        Index("idx_processed_files_run", "run_id"),
+        Index("idx_processed_files_path", "file_path"),
+        Index("idx_processed_files_status_date", "status", "processed_at"),
+    )
+
+    def __repr__(self):
+        return f"<ProcessedFile(id={self.id}, file_path={self.file_path}, status={self.status})>"
