@@ -275,3 +275,173 @@ class ClusterInfo(BaseModel):
     dbu_per_worker: int
     spark_connect_url: str
     pricing: Dict[str, float]
+
+
+# Refresh Operations
+class RefreshRequest(BaseModel):
+    """Request schema for table refresh operation."""
+
+    confirm: bool = Field(
+        ...,
+        description="Must be true to proceed. Safety confirmation required.",
+        examples=[True]
+    )
+
+    auto_run: bool = Field(
+        default=True,
+        description="Automatically trigger ingestion run after refresh",
+        examples=[True]
+    )
+
+    dry_run: bool = Field(
+        default=False,
+        description="Preview operations without executing them",
+        examples=[False]
+    )
+
+    @field_validator('confirm')
+    @classmethod
+    def confirm_must_be_true(cls, v: bool) -> bool:
+        if not v:
+            raise ValueError(
+                "Confirmation required. This is a destructive operation. "
+                "Set confirm=true to proceed."
+            )
+        return v
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "confirm": True,
+                "auto_run": True,
+                "dry_run": False
+            }
+        }
+
+
+class OperationStatus(str, Enum):
+    """Operation status."""
+    SUCCESS = "success"
+    FAILED = "failed"
+    SKIPPED = "skipped"
+
+
+class Operation(BaseModel):
+    """Details of a single operation within a refresh."""
+
+    operation: str = Field(
+        ...,
+        description="Operation type",
+        examples=["table_dropped"]
+    )
+    status: OperationStatus = Field(
+        ...,
+        description="Operation status",
+        examples=["success"]
+    )
+    timestamp: datetime = Field(
+        ...,
+        description="When operation was performed",
+        examples=["2025-01-05T10:30:01Z"]
+    )
+    details: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Operation-specific details"
+    )
+    error: Optional[str] = Field(
+        default=None,
+        description="Error message if operation failed"
+    )
+    error_code: Optional[str] = Field(
+        default=None,
+        description="Machine-readable error code"
+    )
+
+
+class ImpactEstimate(BaseModel):
+    """Estimated impact of the refresh operation."""
+
+    files_to_process: int = Field(
+        ...,
+        description="Number of files that will be processed",
+        examples=[1247]
+    )
+    files_skipped: Optional[int] = Field(
+        default=None,
+        description="Number of files that will be skipped",
+        examples=[0]
+    )
+    estimated_data_size_gb: float = Field(
+        ...,
+        description="Estimated data size to process (GB)",
+        examples=[450.2]
+    )
+    estimated_cost_usd: float = Field(
+        ...,
+        description="Estimated processing cost (USD)",
+        examples=[125.50]
+    )
+    estimated_duration_minutes: int = Field(
+        ...,
+        description="Estimated processing time (minutes)",
+        examples=[45]
+    )
+
+
+class RefreshOperationResponse(BaseModel):
+    """Standard response for refresh operations."""
+
+    status: str = Field(
+        ...,
+        description="Overall operation status",
+        examples=["accepted"]
+    )
+    message: str = Field(
+        ...,
+        description="Human-readable summary",
+        examples=["Full refresh completed successfully"]
+    )
+    ingestion_id: str = Field(
+        ...,
+        description="Ingestion identifier",
+        examples=["ing-abc123"]
+    )
+    run_id: Optional[str] = Field(
+        default=None,
+        description="Run identifier if run was triggered",
+        examples=["run-xyz789"]
+    )
+    timestamp: datetime = Field(
+        ...,
+        description="Response timestamp",
+        examples=["2025-01-05T10:30:00Z"]
+    )
+    mode: str = Field(
+        ...,
+        description="Refresh mode: full or new_only",
+        examples=["full"]
+    )
+    operations: List[Operation] = Field(
+        default_factory=list,
+        description="List of operations performed"
+    )
+    impact: ImpactEstimate = Field(
+        ...,
+        description="Impact estimate"
+    )
+    warnings: List[str] = Field(
+        default_factory=list,
+        description="Warnings about the operation"
+    )
+    notes: List[str] = Field(
+        default_factory=list,
+        description="Additional notes and context"
+    )
+    would_perform: Optional[List[Dict[str, Any]]] = Field(
+        default=None,
+        description="Operations that would be performed (dry run only)"
+    )
+    next_steps: Optional[Dict[str, str]] = Field(
+        default=None,
+        description="Next steps (dry run only)"
+    )

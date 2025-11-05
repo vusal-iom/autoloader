@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
 from app.database import init_db
-from app.api.v1 import ingestions, runs, clusters
+from app.api.v1 import ingestions, runs, clusters, refresh
 
 settings = get_settings()
 
@@ -66,3 +66,4 @@ async def health():
 app.include_router(ingestions.router, prefix="/api/v1")
 app.include_router(runs.router, prefix="/api/v1")
 app.include_router(clusters.router, prefix="/api/v1")
+app.include_router(refresh.router)

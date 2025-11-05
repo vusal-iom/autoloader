@@ -94,3 +94,55 @@ class SparkService:
         finally:
             if client:
                 pool.return_client(cluster_id, client)
+
+    def drop_table(self, cluster_id: str, table_fqn: str) -> Dict[str, Any]:
+        """
+        Drop a table using Spark Connect.
+
+        Args:
+            cluster_id: Cluster ID
+            table_fqn: Fully qualified table name (e.g., catalog.database.table)
+
+        Returns:
+            Dict with operation result and table metadata
+        """
+        from app.spark.session_manager import get_session_pool
+        from app.config import get_spark_connect_credentials
+
+        spark_url, spark_token = get_spark_connect_credentials(cluster_id)
+        pool = get_session_pool()
+        client = None
+
+        try:
+            client = pool.get_client(cluster_id, spark_url, spark_token)
+
+            # Get table stats before dropping (for response metadata)
+            try:
+                stats_query = f"DESCRIBE EXTENDED {table_fqn}"
+                # For now, just return basic info
+                # In production, you might want to collect actual stats
+                table_info = {
+                    "table_name": table_fqn,
+                    "existed": True
+                }
+            except Exception:
+                # Table doesn't exist - that's fine
+                table_info = {
+                    "table_name": table_fqn,
+                    "existed": False
+                }
+
+            # Drop table (IF EXISTS for idempotency)
+            drop_query = f"DROP TABLE IF EXISTS {table_fqn}"
+            client.execute_sql(drop_query)
+
+            return {
+                "success": True,
+                "table_name": table_fqn,
+                "table_info": table_info
+            }
+        except Exception as e:
+            raise Exception(f"Failed to drop table {table_fqn}: {str(e)}")
+        finally:
+            if client:
+                pool.return_client(cluster_id, client)
