@@ -2,12 +2,13 @@
 Refresh Service - Business logic for refresh operations
 """
 
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from sqlalchemy.orm import Session
 from app.models.domain import Ingestion, Run
 from app.services.spark_service import SparkService
 from app.services.file_state_service import FileStateService
 from app.services.ingestion_service import IngestionService
+from app.services.file_discovery_service import FileDiscoveryService, FileMetadata
 from app.repositories.ingestion_repository import IngestionRepository
 from datetime import datetime
 import logging
@@ -217,56 +218,163 @@ class RefreshService:
         """
         Estimate impact of full refresh (ALL files).
 
-        Note: This is a simplified estimation. In production, you would:
-        - Query actual file list from source
-        - Get real file sizes
-        - Use cost estimator service for accurate pricing
+        Uses real file discovery to provide accurate counts and sizes.
         """
-        # Get processed file count as proxy for total files
-        processed_files = self.file_state.get_processed_files(ingestion.id)
-        total_files = len(processed_files) if processed_files else 100  # Default estimate
+        try:
+            # Discover all files from source
+            all_files = self._discover_files(ingestion)
 
-        # Rough estimates (would use actual file discovery in production)
-        estimated_size_gb = total_files * 0.5  # 500MB per file average
-        estimated_cost = estimated_size_gb * 0.25  # $0.25/GB
-        estimated_duration = max(5, total_files * 2)  # 2 min per file, min 5 min
+            if not all_files:
+                logger.warning(f"No files found for ingestion {ingestion.id}")
+                return {
+                    "files_to_process": 0,
+                    "files_skipped": 0,
+                    "estimated_data_size_gb": 0.0,
+                    "estimated_cost_usd": 0.0,
+                    "estimated_duration_minutes": 0,
+                    "oldest_file_date": None,
+                    "newest_file_date": None
+                }
 
-        return {
-            "files_to_process": total_files,
-            "files_skipped": 0,
-            "estimated_data_size_gb": round(estimated_size_gb, 2),
-            "estimated_cost_usd": round(estimated_cost, 2),
-            "estimated_duration_minutes": estimated_duration
-        }
+            # Calculate actual metrics
+            total_files = len(all_files)
+            total_bytes = sum(f.size for f in all_files)
+            total_size_gb = total_bytes / (1024 ** 3)
+
+            # Cost estimation ($0.25/GB as placeholder)
+            estimated_cost = total_size_gb * 0.25
+
+            # Duration estimation (2 min per file, minimum 5 min)
+            estimated_duration = max(5, total_files * 2)
+
+            # File date range
+            file_dates = [f.modified_at for f in all_files]
+            oldest_date = min(file_dates).isoformat() if file_dates else None
+            newest_date = max(file_dates).isoformat() if file_dates else None
+
+            logger.info(
+                f"Full refresh impact for {ingestion.id}: "
+                f"{total_files} files, {total_size_gb:.2f} GB, "
+                f"${estimated_cost:.2f}"
+            )
+
+            return {
+                "files_to_process": total_files,
+                "files_skipped": 0,
+                "estimated_data_size_gb": round(total_size_gb, 2),
+                "estimated_cost_usd": round(estimated_cost, 2),
+                "estimated_duration_minutes": estimated_duration,
+                "oldest_file_date": oldest_date,
+                "newest_file_date": newest_date
+            }
+
+        except Exception as e:
+            logger.error(f"File discovery failed for {ingestion.id}: {e}", exc_info=True)
+
+            # Fallback to estimation based on processed files
+            processed_files = self.file_state.get_processed_files(ingestion.id)
+            total_files = len(processed_files) if processed_files else 100
+
+            estimated_size_gb = total_files * 0.5  # 500MB per file average
+            estimated_cost = estimated_size_gb * 0.25
+
+            logger.warning(f"Using fallback estimation: {total_files} files (estimated)")
+
+            return {
+                "files_to_process": total_files,
+                "files_skipped": 0,
+                "estimated_data_size_gb": round(estimated_size_gb, 2),
+                "estimated_cost_usd": round(estimated_cost, 2),
+                "estimated_duration_minutes": max(5, total_files * 2),
+                "oldest_file_date": None,
+                "newest_file_date": None,
+                "warning": "Using estimated values - file discovery unavailable"
+            }
 
     def _estimate_incremental_refresh_impact(self, ingestion: Ingestion) -> Dict[str, Any]:
         """
         Estimate impact of incremental refresh (NEW files only).
 
-        Note: This is a simplified estimation. In production, you would:
-        - Actually discover new files from source
-        - Get real file sizes
-        - Use cost estimator service
+        Uses real file discovery and compares with processed file history.
         """
-        # Get count of already processed files
-        processed_files = self.file_state.get_processed_files(ingestion.id)
-        files_processed = len(processed_files) if processed_files else 0
+        try:
+            # Get already processed files
+            processed_file_paths = self.file_state.get_processed_files(ingestion.id)
+            files_processed = len(processed_file_paths) if processed_file_paths else 0
 
-        # Estimate new files (in production, would do actual discovery)
-        # For now, assume 5% new files or minimum 10
-        new_files = max(10, int(files_processed * 0.05))
+            # Discover all files from source
+            all_files = self._discover_files(ingestion)
 
-        estimated_size_gb = new_files * 0.5  # 500MB per file average
-        estimated_cost = estimated_size_gb * 0.25  # $0.25/GB
-        estimated_duration = max(5, new_files * 2)  # 2 min per file
+            # Filter to only NEW files (not in processed history)
+            new_files = [f for f in all_files if f.path not in processed_file_paths]
 
-        return {
-            "files_to_process": new_files,
-            "files_skipped": files_processed,
-            "estimated_data_size_gb": round(estimated_size_gb, 2),
-            "estimated_cost_usd": round(estimated_cost, 2),
-            "estimated_duration_minutes": estimated_duration
-        }
+            if not new_files:
+                logger.info(f"No new files found for ingestion {ingestion.id}")
+                return {
+                    "files_to_process": 0,
+                    "files_skipped": files_processed,
+                    "estimated_data_size_gb": 0.0,
+                    "estimated_cost_usd": 0.0,
+                    "estimated_duration_minutes": 0,
+                    "oldest_file_date": None,
+                    "newest_file_date": None
+                }
+
+            # Calculate metrics for NEW files only
+            new_file_count = len(new_files)
+            new_bytes = sum(f.size for f in new_files)
+            new_size_gb = new_bytes / (1024 ** 3)
+
+            # Cost estimation
+            estimated_cost = new_size_gb * 0.25
+
+            # Duration estimation
+            estimated_duration = max(5, new_file_count * 2)
+
+            # File date range for NEW files
+            new_file_dates = [f.modified_at for f in new_files]
+            oldest_date = min(new_file_dates).isoformat() if new_file_dates else None
+            newest_date = max(new_file_dates).isoformat() if new_file_dates else None
+
+            logger.info(
+                f"Incremental refresh impact for {ingestion.id}: "
+                f"{new_file_count} new files, {new_size_gb:.2f} GB, "
+                f"{files_processed} files skipped"
+            )
+
+            return {
+                "files_to_process": new_file_count,
+                "files_skipped": files_processed,
+                "estimated_data_size_gb": round(new_size_gb, 2),
+                "estimated_cost_usd": round(estimated_cost, 2),
+                "estimated_duration_minutes": estimated_duration,
+                "oldest_file_date": oldest_date,
+                "newest_file_date": newest_date
+            }
+
+        except Exception as e:
+            logger.error(f"File discovery failed for incremental refresh {ingestion.id}: {e}", exc_info=True)
+
+            # Fallback to estimation
+            processed_files = self.file_state.get_processed_files(ingestion.id)
+            files_processed = len(processed_files) if processed_files else 0
+            new_files = max(10, int(files_processed * 0.05))
+
+            estimated_size_gb = new_files * 0.5
+            estimated_cost = estimated_size_gb * 0.25
+
+            logger.warning(f"Using fallback estimation: {new_files} new files (estimated)")
+
+            return {
+                "files_to_process": new_files,
+                "files_skipped": files_processed,
+                "estimated_data_size_gb": round(estimated_size_gb, 2),
+                "estimated_cost_usd": round(estimated_cost, 2),
+                "estimated_duration_minutes": max(5, new_files * 2),
+                "oldest_file_date": None,
+                "newest_file_date": None,
+                "warning": "Using estimated values - file discovery unavailable"
+            }
 
     def _build_success_response(
         self,
@@ -387,3 +495,63 @@ class RefreshService:
             "action": "Review operations list and retry if needed",
             "state": f"Completed: {', '.join(completed_ops)}. Failed: {', '.join(failed_ops)}"
         }
+
+    def _discover_files(self, ingestion: Ingestion) -> List[FileMetadata]:
+        """
+        Discover files from the ingestion source.
+
+        Args:
+            ingestion: Ingestion configuration
+
+        Returns:
+            List of FileMetadata objects
+
+        Raises:
+            ValueError: If source type is not supported
+            Exception: If file discovery fails
+        """
+        source_type = ingestion.source_type.upper()
+
+        # Phase 1: Only S3 is supported
+        if source_type != "S3":
+            raise ValueError(
+                f"Unsupported source type for Phase 1: {source_type}. "
+                f"Only S3 is supported. Azure Blob and GCS support coming in Phase 2."
+            )
+
+        # Parse S3 path (format: s3://bucket/prefix or s3a://bucket/prefix)
+        source_path = ingestion.source_path
+        if source_path.startswith("s3://"):
+            source_path = source_path[5:]
+        elif source_path.startswith("s3a://"):
+            source_path = source_path[6:]
+        else:
+            raise ValueError(f"Invalid S3 path format: {ingestion.source_path}")
+
+        # Split into bucket and prefix
+        parts = source_path.split("/", 1)
+        bucket = parts[0]
+        prefix = parts[1] if len(parts) > 1 else ""
+
+        # Initialize file discovery service
+        discovery_service = FileDiscoveryService(
+            source_type=source_type,
+            credentials=ingestion.source_credentials or {},
+            region=ingestion.source_credentials.get("region") if ingestion.source_credentials else None
+        )
+
+        # List files
+        try:
+            files = discovery_service.list_files(
+                bucket=bucket,
+                prefix=prefix,
+                pattern=ingestion.source_file_pattern,
+                max_files=None  # Get all files for accurate estimation
+            )
+
+            logger.info(f"Discovered {len(files)} files for ingestion {ingestion.id}")
+            return files
+
+        except Exception as e:
+            logger.error(f"Failed to discover files for ingestion {ingestion.id}: {e}")
+            raise
