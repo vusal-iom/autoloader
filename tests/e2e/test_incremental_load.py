@@ -75,12 +75,8 @@ class TestIncrementalLoad:
         logger = E2ELogger()
         logger.section("🧪 E2E TEST: Incremental Load (E2E-02)")
 
-        # Generate unique table name
         table_name = generate_unique_table_name("e2e_incremental_test")
 
-        # ====================================================================
-        # STEP 1: Create Ingestion Configuration
-        # ====================================================================
         logger.phase("📝 Creating ingestion configuration...")
 
         ingestion = create_standard_ingestion(
@@ -98,22 +94,13 @@ class TestIncrementalLoad:
         assert ingestion["id"] is not None
         assert ingestion["status"] == "draft"
 
-        # ====================================================================
-        # PHASE 1: Initial Ingestion (3 files)
-        # ====================================================================
         logger.section("📦 PHASE 1: Initial Ingestion (3 files)")
         logger.step(f"Initial files already uploaded: {len(sample_json_files)} files", always=True)
 
-        # ====================================================================
-        # Trigger First Run
-        # ====================================================================
         logger.phase("🚀 Triggering first run...")
         run1_id = trigger_run(api_client, ingestion_id)
         logger.success(f"Triggered run 1: {run1_id}")
 
-        # ====================================================================
-        # Wait for First Run Completion
-        # ====================================================================
         logger.phase("⏳ Waiting for first run completion...")
         run1 = wait_for_run_completion(
             api_client=api_client,
@@ -122,9 +109,6 @@ class TestIncrementalLoad:
             logger=logger
         )
 
-        # ====================================================================
-        # Verify First Run Metrics
-        # ====================================================================
         logger.phase("📊 Verifying first run metrics...")
         assert_run_metrics(
             run=run1,
@@ -134,9 +118,6 @@ class TestIncrementalLoad:
         )
         logger.success("First run metrics verified")
 
-        # ====================================================================
-        # Verify Data After First Run
-        # ====================================================================
         logger.phase("🔍 Verifying data after first run...")
         table_identifier = get_table_identifier(ingestion)
 
@@ -149,9 +130,6 @@ class TestIncrementalLoad:
         )
         logger.success("Data verification after first run passed")
 
-        # ====================================================================
-        # PHASE 2: Add New Files
-        # ====================================================================
         logger.section("📦 PHASE 2: Add New Files (2 more files)")
 
         logger.phase("📤 Uploading 2 additional files...")
@@ -166,17 +144,12 @@ class TestIncrementalLoad:
         logger.success(f"Uploaded {len(new_files)} additional files")
         logger.step(f"Total files in bucket: {len(sample_json_files) + len(new_files)}", always=True)
 
-        # ====================================================================
-        # PHASE 3: Second Ingestion Run (Incremental)
-        # ====================================================================
         logger.section("📦 PHASE 3: Second Ingestion Run (Incremental)")
 
-        # Trigger Second Run
         logger.phase("🚀 Triggering second run (incremental)...")
         run2_id = trigger_run(api_client, ingestion_id)
         logger.success(f"Triggered run 2: {run2_id}")
 
-        # Wait for Second Run Completion
         logger.phase("⏳ Waiting for second run completion...")
         run2 = wait_for_run_completion(
             api_client=api_client,
@@ -185,7 +158,6 @@ class TestIncrementalLoad:
             logger=logger
         )
 
-        # Verify Second Run Metrics (CRITICAL - Incremental)
         logger.phase("📊 Verifying second run metrics (CRITICAL - Incremental Load)...")
         assert_run_metrics(
             run=run2,
@@ -195,7 +167,6 @@ class TestIncrementalLoad:
         )
         logger.success("Second run metrics verified - INCREMENTAL LOAD WORKING!", always=True)
 
-        # Verify Total Data (No Duplicates)
         logger.phase("🔍 Verifying total data (no duplicates)...")
         df = spark_session.table(table_identifier)
         total_record_count = df.count()
@@ -216,7 +187,6 @@ class TestIncrementalLoad:
 
         logger.success("Total data verification passed - NO DUPLICATES!", always=True)
 
-        # Verify Run History
         logger.phase("📜 Verifying run history...")
         response = api_client.get(f"/api/v1/ingestions/{ingestion_id}/runs")
         assert response.status_code == 200
@@ -224,7 +194,6 @@ class TestIncrementalLoad:
         runs = response.json()
         assert len(runs) >= 2, "Expected at least 2 runs in history"
 
-        # Verify both runs are in history
         run1_in_history = next((r for r in runs if r["id"] == run1_id), None)
         run2_in_history = next((r for r in runs if r["id"] == run2_id), None)
 
@@ -233,9 +202,6 @@ class TestIncrementalLoad:
 
         logger.success("Run history verified")
 
-        # ====================================================================
-        # TEST COMPLETE
-        # ====================================================================
         logger.section("✅ E2E TEST PASSED: Incremental Load (E2E-02)")
         print(f"\nSummary:")
         print(f"  - Ingestion ID: {ingestion_id}")

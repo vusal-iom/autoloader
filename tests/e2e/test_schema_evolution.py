@@ -77,12 +77,8 @@ class TestSchemaEvolution:
         logger = E2ELogger()
         logger.section("🧪 E2E TEST: Schema Evolution (E2E-03)")
 
-        # Generate unique table name
         table_name = generate_unique_table_name("e2e_schema_evolution")
 
-        # ====================================================================
-        # STEP 1: Create Ingestion Configuration (Evolution ENABLED)
-        # ====================================================================
         logger.phase("📝 Creating ingestion configuration (evolution enabled)...")
 
         ingestion = create_standard_ingestion(
@@ -103,9 +99,6 @@ class TestSchemaEvolution:
         assert ingestion["status"] == "draft"
         assert ingestion["format"]["schema"]["evolution_enabled"] is True
 
-        # ====================================================================
-        # PHASE 1: Initial Load (Base Schema - 5 fields)
-        # ====================================================================
         logger.section("📦 PHASE 1: Initial Load (Base Schema - 5 fields)")
 
         logger.phase("📤 Uploading 3 files with BASE schema (5 fields)...")
@@ -121,12 +114,10 @@ class TestSchemaEvolution:
         logger.success(f"Uploaded {len(base_files)} files with BASE schema")
         logger.step("Fields: id, timestamp, user_id, event_type, value", always=True)
 
-        # Trigger First Run
         logger.phase("🚀 Triggering first run...")
         run1_id = trigger_run(api_client, ingestion_id)
         logger.success(f"Triggered run 1: {run1_id}")
 
-        # Wait for First Run Completion
         logger.phase("⏳ Waiting for first run completion...")
         run1 = wait_for_run_completion(
             api_client=api_client,
@@ -135,7 +126,6 @@ class TestSchemaEvolution:
             logger=logger
         )
 
-        # Verify First Run Metrics
         logger.phase("📊 Verifying first run metrics...")
         assert_run_metrics(
             run=run1,
@@ -145,7 +135,6 @@ class TestSchemaEvolution:
         )
         logger.success("First run metrics verified")
 
-        # Verify Initial Schema (5 fields)
         logger.phase("🔍 Verifying initial schema (5 fields)...")
         table_identifier = get_table_identifier(ingestion)
 
@@ -160,9 +149,6 @@ class TestSchemaEvolution:
         )
         logger.success("Initial schema verified (5 base fields only)")
 
-        # ====================================================================
-        # PHASE 2: Schema Evolution (Add 2 new fields)
-        # ====================================================================
         logger.section("📦 PHASE 2: Schema Evolution (Add region, metadata)")
 
         logger.phase("📤 Uploading 2 files with EVOLVED schema (7 fields)...")
@@ -178,12 +164,10 @@ class TestSchemaEvolution:
         logger.success(f"Uploaded {len(evolved_files)} files with EVOLVED schema")
         logger.step("NEW fields: region, metadata", always=True)
 
-        # Trigger Second Run
         logger.phase("🚀 Triggering second run (with evolved schema)...")
         run2_id = trigger_run(api_client, ingestion_id)
         logger.success(f"Triggered run 2: {run2_id}")
 
-        # Wait for Second Run Completion
         logger.phase("⏳ Waiting for second run completion...")
         run2 = wait_for_run_completion(
             api_client=api_client,
@@ -192,7 +176,6 @@ class TestSchemaEvolution:
             logger=logger
         )
 
-        # Verify Second Run Metrics
         logger.phase("📊 Verifying second run metrics...")
         assert_run_metrics(
             run=run2,
@@ -202,7 +185,6 @@ class TestSchemaEvolution:
         )
         logger.success("Second run metrics verified")
 
-        # Verify Schema Evolution (7 fields)
         logger.phase("🔍 Verifying schema evolution (7 fields)...")
         df = verify_table_data(
             spark_session=spark_session,
@@ -214,7 +196,6 @@ class TestSchemaEvolution:
         )
         logger.success("Schema evolution verified - Table now has 7 fields!", always=True)
 
-        # Verify Backward and Forward Compatibility
         logger.phase("🔍 Verifying backward and forward compatibility...")
         verify_schema_evolution(
             spark_session=spark_session,
@@ -227,22 +208,16 @@ class TestSchemaEvolution:
             logger=logger
         )
 
-        # Verify Data Queryability
         logger.phase("🔍 Verifying all data is queryable...")
 
-        # Query across all records
         result = df.groupBy("event_type").count().collect()
         logger.step(f"Event type distribution: {len(result)} types", always=True)
 
-        # Query with new fields
         region_counts = df.filter("region IS NOT NULL").groupBy("region").count().collect()
         logger.step(f"Region distribution: {len(region_counts)} regions (new records only)", always=True)
 
         logger.success("All data is queryable - Schema evolution successful!")
 
-        # ====================================================================
-        # TEST COMPLETE
-        # ====================================================================
         logger.section("✅ E2E TEST PASSED: Schema Evolution (E2E-03)")
         print(f"\nSummary:")
         print(f"  - Ingestion ID: {ingestion_id}")

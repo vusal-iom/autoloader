@@ -66,12 +66,8 @@ class TestBasicS3JsonIngestion:
         logger = E2ELogger()
         logger.section("🧪 E2E TEST: Basic S3 JSON Ingestion - Happy Path")
 
-        # Generate unique table name
         table_name = generate_unique_table_name("e2e_test_table")
 
-        # ====================================================================
-        # STEP 1: Create Ingestion Configuration
-        # ====================================================================
         logger.phase("📝 Creating ingestion configuration...")
 
         ingestion = create_standard_ingestion(
@@ -93,18 +89,12 @@ class TestBasicS3JsonIngestion:
         assert ingestion["status"] == "draft"
         assert ingestion["name"] == "E2E Test S3 JSON Ingestion"
 
-        # ====================================================================
-        # STEP 2: Trigger Manual Run
-        # ====================================================================
         logger.phase("🚀 Triggering manual run...")
 
         run_id = trigger_run(api_client, ingestion_id)
 
         logger.success(f"Triggered run: {run_id}")
 
-        # ====================================================================
-        # STEP 3: Poll for Completion
-        # ====================================================================
         logger.phase("⏳ Polling for completion...")
 
         run = wait_for_run_completion(
@@ -115,9 +105,6 @@ class TestBasicS3JsonIngestion:
             logger=logger
         )
 
-        # ====================================================================
-        # STEP 4: Verify Run Metrics
-        # ====================================================================
         logger.phase("📊 Verifying run metrics...")
 
         assert_run_metrics(
@@ -130,9 +117,6 @@ class TestBasicS3JsonIngestion:
 
         logger.success("All metrics verified")
 
-        # ====================================================================
-        # STEP 5: Verify Data in Iceberg Table
-        # ====================================================================
         logger.phase("🔍 Verifying data in Iceberg table...")
 
         table_identifier = get_table_identifier(ingestion)
@@ -146,15 +130,11 @@ class TestBasicS3JsonIngestion:
             logger=logger
         )
 
-        # Verify data is queryable
         sample_data = df.limit(5).collect()
         assert len(sample_data) == 5, "Expected 5 sample records"
 
         logger.success("Data verification passed")
 
-        # ====================================================================
-        # STEP 6: Verify Run History
-        # ====================================================================
         logger.phase("📜 Verifying run history...")
 
         response = api_client.get(f"/api/v1/ingestions/{ingestion_id}/runs")
@@ -165,15 +145,11 @@ class TestBasicS3JsonIngestion:
 
         assert len(runs) >= 1, "Expected at least 1 run in history"
 
-        # Find our run
         our_run = next((r for r in runs if r["id"] == run_id), None)
         assert our_run is not None, f"Run {run_id} not found in history"
 
         logger.success(f"Run found in history: {our_run['id']}")
 
-        # ====================================================================
-        # TEST COMPLETE
-        # ====================================================================
         logger.section("✅ E2E TEST PASSED: Basic S3 JSON Ingestion - Happy Path")
         print(f"\nSummary:")
         print(f"  - Ingestion ID: {ingestion_id}")
