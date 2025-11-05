@@ -16,6 +16,7 @@ IOMETE Autoloader is a zero-code, UI-driven (and API) data ingestion system that
 - UI configuration wizard
 - Resource-efficient: cluster only used during scheduled execution windows
 
+
 ## User Request Context
 
 ### Original Problem Statement
@@ -82,127 +83,25 @@ app/
 │   └── schemas.py                   # Pydantic schemas for API requests/responses
 │
 ├── services/                        # Business logic layer
-│   ├── ingestion_service.py         # Ingestion management (partially implemented)
+│   ├── ingestion_service.py         # Ingestion management
 │   ├── spark_service.py             # Spark operations wrapper
-│   └── cost_estimator.py            # Cost calculation service
+│   ├── cost_estimator.py            # Cost calculation service
+│   ├── file_discovery_service.py    # File discovery and listing from cloud storage
+│   ├── file_state_service.py        # File state tracking (processed/pending)
+│   ├── batch_file_processor.py      # Batch file processing logic
+│   └── batch_orchestrator.py        # Orchestrates batch ingestion runs
 │
 ├── repositories/                    # Data access layer
 │   ├── ingestion_repository.py      # Ingestion data access
-│   └── run_repository.py            # Run history data access
+│   ├── run_repository.py            # Run history data access
+│   └── processed_file_repository.py # Processed file tracking data access
 │
 └── spark/                           # Spark Connect integration
-    ├── connect_client.py            # Spark Connect client (implemented)
-    ├── executor.py                  # Ingestion executor (TODO)
-    └── session_manager.py           # Session pooling (TODO)
+    ├── connect_client.py            # Spark Connect client
+    ├── executor.py                  # Ingestion executor
+    └── session_manager.py           # Session pooling
 ```
 
-## Implementation Status
-
-**Implemented:**
-- Core FastAPI application with CORS middleware
-- Database models (Ingestion, Run, SchemaVersion) with full schema
-- Pydantic schemas for API validation
-- API endpoints structure (all routes defined)
-- Spark Connect client with Auto Loader integration
-- Basic cost estimator service
-- Configuration management with environment variables
-- Repository pattern for data access
-
-**Partially Implemented:**
-- Ingestion service (create_ingestion started, other methods are stubs)
-- Spark service wrapper (basic structure)
-
-**Not Yet Implemented (TODOs):**
-- Scheduler integration for triggering runs
-- Spark Connect session pooling and executor
-- Schema evolution detection logic
-- Authentication/authorization layer
-- Email notifications and alerting
-- Metrics collection and monitoring
-- Checkpoint health monitoring
-- Error recovery and retry logic
-- Data quality checks enforcement
-- Advanced cost estimation (file sampling)
-
-## Key Components
-
-### Database Models (app/models/domain.py)
-
-**Ingestion:**
-- Core fields: id, tenant_id, name, status (DRAFT/ACTIVE/PAUSED/ERROR)
-- Cluster info: cluster_id, spark_connect_url, spark_connect_token
-- Source: source_type, source_path, source_file_pattern, source_credentials (encrypted JSON)
-- Format: format_type (JSON/CSV/PARQUET/AVRO/ORC), format_options, schema handling
-- Destination: catalog/database/table, write_mode (APPEND/OVERWRITE)
-- Optimization: partitioning, z-ordering
-- Schedule: frequency (daily/hourly/weekly/custom), cron_expression, timezone (batch mode only)
-- Quality: thresholds, alerts
-- Metadata: checkpoint_location, run tracking, estimated_cost
-
-**Run:**
-- Execution tracking: id, ingestion_id, started_at, ended_at, status, trigger
-- Metrics: files_processed, records_ingested, bytes_read/written, duration_seconds
-- Errors: JSON array with error details
-- Spark: spark_job_id, cluster_id
-
-**SchemaVersion:**
-- Version tracking: id, ingestion_id, version, detected_at
-- Schema: schema_json, affected_files
-- Resolution: resolution_type (ACCEPT/MERGE/REJECT), resolved_at/by
-
-### API Endpoints (app/api/v1/)
-
-**Ingestions (/api/v1/ingestions):**
-- `POST /` - Create ingestion
-- `GET /` - List ingestions (filtered by tenant)
-- `GET /{id}` - Get ingestion details
-- `PUT /{id}` - Update ingestion
-- `DELETE /{id}` - Delete ingestion
-- `POST /{id}/run` - Trigger manual run (202 ACCEPTED)
-- `POST /{id}/pause` - Pause ingestion
-- `POST /{id}/resume` - Resume ingestion
-- `POST /test` - Preview/test configuration
-- `POST /estimate-cost` - Estimate monthly costs
-
-**Runs (/api/v1/ingestions/{id}/runs):**
-- `GET /` - Get run history (last 30 days, limit 100)
-- `GET /{run_id}` - Get run details
-- `POST /{run_id}/retry` - Retry failed run (202 ACCEPTED)
-
-**Clusters (/api/v1/clusters):**
-- `GET /` - List available clusters
-- `GET /{id}` - Get cluster details
-- `POST /{id}/test-connection` - Test Spark Connect connectivity
-
-### Spark Connect Client (app/spark/connect_client.py)
-
-**Key Methods:**
-- `connect()` - Establish Spark Connect session with cloud credentials
-- `test_connection()` - Verify connectivity and Spark version
-- `read_stream()` - Create Auto Loader streaming DataFrame with cloudFiles
-- `write_stream()` - Write to Iceberg table (always uses availableNow trigger for batch processing)
-- `preview_files()` - Sample data preview with schema inference
-- Cloud credential configuration (S3, Azure, GCS)
-
-**Supported Formats:** JSON, CSV, Parquet, Avro, ORC with format-specific options
-
-**Execution Mode:** Batch processing with Spark's availableNow trigger - processes all available data incrementally using checkpoints, then automatically terminates. Not continuous streaming.
-
-### Cost Estimator (app/services/cost_estimator.py)
-
-**Algorithm:**
-1. Estimate file count and size from configuration
-2. Calculate processing time based on format and size
-3. Determine runs per month from schedule
-4. Compute costs:
-   - **Compute**: (duration_hours × cluster_DBUs × cost_per_DBU × runs_per_month)
-   - **Storage**: (file_size_GB × storage_cost × runs_per_month)
-   - **Discovery**: (file_count × runs_per_month / 1000 × list_operation_cost)
-
-**Configurable Rates:**
-- COST_PER_DBU_HOUR: $0.40
-- STORAGE_COST_PER_GB: $0.023
-- LIST_OPERATION_COST_PER_1000: $0.005
 
 ## Architecture Patterns
 
@@ -269,12 +168,6 @@ Parallel: Spark Connect (Remote execution)
 - Preview mode for testing configurations before activation
 
 ## End to end (e2e) integration tests
-
-Here’s an improved, professional, and clear version of your full prompt — suitable for documentation, developer guidelines, or an AI assistant instruction:
-
----
-
-### End-to-End Test Guidelines
 
 These tests are intended to be **end-to-end**.
 
