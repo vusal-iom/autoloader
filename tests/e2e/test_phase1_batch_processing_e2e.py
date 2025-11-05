@@ -12,7 +12,7 @@ from typing import Dict, Any
 import pytest
 from sqlalchemy.orm import Session
 
-from app.models.domain import Ingestion, Run, ProcessedFile, ProcessedFileStatus
+from app.models.domain import Ingestion, Run, ProcessedFile, ProcessedFileStatus, IngestionStatus
 from app.services.batch_orchestrator import BatchOrchestrator
 
 
@@ -63,8 +63,10 @@ class TestPhase1BatchProcessing:
         print(f"✓ Run completed: {run.id}, status={run.status}")
 
         # Step 3: Verify Run record
+        from app.models.domain import RunStatus
+
         assert run is not None, "Run should be created"
-        assert run.status == "SUCCESS", f"Expected SUCCESS, got {run.status}"
+        assert run.status == RunStatus.SUCCESS.value, f"Expected SUCCESS, got {run.status}"
         assert run.files_processed == 3, f"Expected 3 files processed, got {run.files_processed}"
         assert run.started_at is not None, "Run should have started_at"
         assert run.ended_at is not None, "Run should have ended_at"
@@ -126,6 +128,7 @@ class TestPhase1BatchProcessing:
     ) -> Ingestion:
         """Create test Ingestion record"""
         import json
+        import uuid
 
         # Build S3 path (use s3a:// for Spark)
         source_path = f"s3a://{test_data_s3['bucket']}/{test_data_s3['prefix']}"
@@ -139,6 +142,7 @@ class TestPhase1BatchProcessing:
         }
 
         ingestion = Ingestion(
+            id=str(uuid.uuid4()),
             tenant_id=test_config["tenant_id"],
             name="E2E Test Phase1 Batch Ingestion",
             cluster_id=test_config["cluster_id"],
@@ -147,7 +151,7 @@ class TestPhase1BatchProcessing:
             source_type="S3",
             source_path=source_path,
             source_file_pattern="*.json",
-            source_credentials=json.dumps(credentials),
+            source_credentials=credentials,
 
             # Format configuration
             format_type="JSON",
@@ -155,20 +159,19 @@ class TestPhase1BatchProcessing:
             schema_json=None,  # Auto-infer schema
 
             # Destination configuration
-            catalog="test_catalog",
-            database="test_db",
-            table="phase1_e2e_test",
-            write_mode="APPEND",
-
-            # Spark Connect
-            spark_connect_url=test_config["spark_connect_url"],
-            spark_connect_token=test_config.get("spark_connect_token", ""),
+            destination_catalog="test_catalog",
+            destination_database="test_db",
+            destination_table="phase1_e2e_test",
+            write_mode="append",
 
             # Checkpoint location
             checkpoint_location=f"s3a://{test_data_s3['bucket']}/checkpoints/phase1-e2e-test",
 
             # Status
-            status="ACTIVE"
+            status=IngestionStatus.ACTIVE,
+
+            # Required audit field
+            created_by="e2e-test"
         )
 
         return ingestion
@@ -196,7 +199,7 @@ class TestPhase1BatchProcessing:
         client.connect()
 
         # Query the Iceberg table
-        table_identifier = f"{ingestion.catalog}.{ingestion.database}.{ingestion.table}"
+        table_identifier = f"{ingestion.destination_catalog}.{ingestion.destination_database}.{ingestion.destination_table}"
 
         try:
             df = client.session.table(table_identifier)

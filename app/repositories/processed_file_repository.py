@@ -211,13 +211,16 @@ class ProcessedFileRepository:
             records_ingested: Number of records ingested
             bytes_read: Bytes read from file
         """
+        from datetime import timezone
+
         file_record.status = ProcessedFileStatus.SUCCESS.value
-        file_record.processed_at = datetime.utcnow()
+        now = datetime.now(timezone.utc)
+        file_record.processed_at = now
         file_record.records_ingested = records_ingested
         file_record.bytes_read = bytes_read
 
         if file_record.processing_started_at:
-            duration = (datetime.utcnow() - file_record.processing_started_at).total_seconds()
+            duration = (now - file_record.processing_started_at).total_seconds()
             file_record.processing_duration_ms = int(duration * 1000)
 
         file_record.error_message = None
@@ -234,13 +237,16 @@ class ProcessedFileRepository:
             file_record: ProcessedFile instance
             error: Exception that caused failure
         """
+        from datetime import timezone
+
         file_record.status = ProcessedFileStatus.FAILED.value
         file_record.error_message = str(error)
         file_record.error_type = type(error).__name__
-        file_record.processed_at = datetime.utcnow()
+        now = datetime.now(timezone.utc)
+        file_record.processed_at = now
 
         if file_record.processing_started_at:
-            duration = (datetime.utcnow() - file_record.processing_started_at).total_seconds()
+            duration = (now - file_record.processing_started_at).total_seconds()
             file_record.processing_duration_ms = int(duration * 1000)
 
         self.db.commit()

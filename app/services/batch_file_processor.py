@@ -209,6 +209,7 @@ class BatchFileProcessor:
         if self.ingestion.partitioning_enabled and self.ingestion.partitioning_columns:
             writer = writer.partitionBy(*self.ingestion.partitioning_columns)
 
-        # Write
-        writer.save(table_identifier)
+        # For Iceberg, use saveAsTable to create table if it doesn't exist
+        # This will create the table on first write and append on subsequent writes
+        writer.saveAsTable(table_identifier)
         logger.debug(f"Wrote DataFrame to {table_identifier}")

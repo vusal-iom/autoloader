@@ -25,7 +25,8 @@ class SparkConnectClient:
         Returns:
             SparkSession instance
         """
-        if self.session is None or self.session.sparkContext._jsc is None:
+        # Note: Spark Connect doesn't support sparkContext, so we only check if session is None
+        if self.session is None:
             self.session = (
                 SparkSession.builder.remote(self.connect_url)
                 .config("spark.sql.session.timeZone", "UTC")

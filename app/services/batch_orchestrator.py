@@ -149,10 +149,15 @@ class BatchOrchestrator:
         """
         # Parse bucket and prefix from source_path
         # Example: s3://my-bucket/data/events/ → bucket=my-bucket, prefix=data/events/
+        # Also support s3a:// format used by Spark
         source_path = ingestion.source_path
 
         if source_path.startswith("s3://"):
             parts = source_path.replace("s3://", "").split('/', 1)
+            bucket = parts[0]
+            prefix = parts[1] if len(parts) > 1 else ""
+        elif source_path.startswith("s3a://"):
+            parts = source_path.replace("s3a://", "").split('/', 1)
             bucket = parts[0]
             prefix = parts[1] if len(parts) > 1 else ""
         else:

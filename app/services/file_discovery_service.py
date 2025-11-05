@@ -123,8 +123,8 @@ class FileDiscoveryService:
                     if pattern and not obj['Key'].endswith(pattern.replace("*", "")):
                         continue
 
-                    # Build full S3 path
-                    file_path = f"s3://{bucket}/{obj['Key']}"
+                    # Build full S3 path (use s3a:// for Spark compatibility)
+                    file_path = f"s3a://{bucket}/{obj['Key']}"
 
                     # Create FileMetadata
                     file_metadata = FileMetadata(
@@ -175,14 +175,22 @@ class FileDiscoveryService:
                 raise ValueError("Missing AWS credentials: aws_access_key_id and aws_secret_access_key required")
 
             # Create S3 client
-            client = boto3.client(
-                's3',
-                aws_access_key_id=aws_access_key_id,
-                aws_secret_access_key=aws_secret_access_key,
-                region_name=self.region
-            )
+            # Check if custom endpoint is provided (for MinIO, LocalStack, etc.)
+            endpoint = self.credentials.get("endpoint")
 
-            logger.info(f"Initialized S3 client for region: {self.region}")
+            client_kwargs = {
+                'aws_access_key_id': aws_access_key_id,
+                'aws_secret_access_key': aws_secret_access_key,
+                'region_name': self.region
+            }
+
+            if endpoint:
+                client_kwargs['endpoint_url'] = endpoint
+                logger.info(f"Initialized S3 client with custom endpoint: {endpoint}")
+            else:
+                logger.info(f"Initialized S3 client for region: {self.region}")
+
+            client = boto3.client('s3', **client_kwargs)
             return client
 
         except Exception as e:
