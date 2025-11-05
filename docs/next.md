@@ -1,4 +1,12 @@
- Critical Production Blockers (Must Fix)
+- Review storing files in the db. we may need to move it to iceberg table
+- Performance implications of fetching all the files again and again. Instead moving processed files somewhere (an idea). Maybe force to notification system
+- Notifications system (sqs, kafka, rabit, http handler) as a plugin architecture
+- Sending alert/email
+- Monitoring and audit
+
+
+----
+Critical Production Blockers (Must Fix)
 
   1. Authentication & Authorization System
     - Currently using hardcoded tenant/user IDs throughout the codebase
