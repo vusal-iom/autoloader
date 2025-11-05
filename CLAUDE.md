@@ -13,7 +13,7 @@ IOMETE Autoloader is a zero-code, UI-driven (and API) data ingestion system that
 - Cost estimation and transparency
 - Preview/test mode before activation
 - Real-time monitoring with run history
-- No-code UI configuration wizard
+- UI configuration wizard
 - Resource-efficient: cluster only used during scheduled execution windows
 
 ## User Request Context
@@ -27,6 +27,8 @@ As Shafi mentioned: making this easy for such a common use case could boost usag
 Fuad did point out we have a **marketplace streaming Job** for this, but this would be up and running all the time — while most of my files come in daily or less frequently — so a scheduled approach would save resources and simplify things.
 Even then, the job makes the UX clunkier than just a simple UI to configure a file ingestion (which underneath can be a job).
 
+*Note: This represents one example use case. IOMETE Autoloader is designed for generalized file ingestion across various sources and scenarios.*
+
 ## Tech Stack
 
 **Backend:**
@@ -37,13 +39,12 @@ Even then, the job makes the UX clunkier than just a simple UI to configure a fi
 - Uvicorn 0.27.0 - ASGI server
 
 **Spark Integration:**
-- PySpark with Spark Connect 3.5.0
-- Auto Loader (cloudFiles) for incremental ingestion
+- Apache PySpark with Spark Connect 3.5.0
 - Apache Iceberg for destination tables
 
 **Database:**
-- PostgreSQL (production) with psycopg2
-- SQLite (development)
+- PostgreSQL (production, e2e integration tests) with psycopg2
+- SQLite (development, unit tests)
 
 **Cloud SDKs:**
 - AWS: boto3 1.34.34
