@@ -295,3 +295,13 @@ Parallel: Spark Connect (Remote execution)
 - Manual "Run Now" trigger
 - Cost estimation
 - Preview/test mode 
+
+## End to end (e2e) integration tests
+
+These tests are meant to be **end-to-end**.
+
+* **No direct database manipulation** — all interactions must happen through the API.
+* It’s acceptable to **create test files in MinIO** before the test runs.
+* **All verification** should also be done **via API responses**, not by inspecting the database directly.
+
+The goal is to validate the **complete end-to-end flow** through the system.
