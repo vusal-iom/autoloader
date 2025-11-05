@@ -37,7 +37,7 @@ from .helpers import (
 @pytest.mark.e2e
 @pytest.mark.requires_spark
 @pytest.mark.requires_minio
-class TestBasicS3JsonIngestion:
+class TestBasicIngestion:
     """E2E test for basic S3 JSON ingestion - Happy Path"""
 
     def test_basic_ingestion(
