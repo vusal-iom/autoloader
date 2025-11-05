@@ -129,8 +129,8 @@ async def trigger_run(
     Returns:
         Run ID for tracking progress
     """
-    run_id = service.trigger_manual_run(ingestion_id)
-    return {"run_id": run_id, "status": "accepted"}
+    run = service.trigger_manual_run(ingestion_id)
+    return {"run_id": run.id, "status": "accepted"}
 
 
 @router.post("/{ingestion_id}/pause", status_code=status.HTTP_200_OK)

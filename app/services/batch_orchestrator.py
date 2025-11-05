@@ -190,8 +190,20 @@ class BatchOrchestrator:
             duration = (run.ended_at - run.started_at).total_seconds()
             run.duration_seconds = int(duration)
 
-        # Note: records_ingested, bytes_read will be aggregated from processed_files table
-        # For Phase 1, we can set them to 0 or aggregate in a separate query
+        # Aggregate records_ingested and bytes_read from processed_files table
+        from sqlalchemy import func
+        from app.models.domain import ProcessedFile
+
+        result = self.db.query(
+            func.sum(ProcessedFile.records_ingested).label('total_records'),
+            func.sum(ProcessedFile.bytes_read).label('total_bytes')
+        ).filter(
+            ProcessedFile.run_id == run.id,
+            ProcessedFile.status == 'SUCCESS'
+        ).first()
+
+        run.records_ingested = int(result.total_records) if result.total_records else 0
+        run.bytes_read = int(result.total_bytes) if result.total_bytes else 0
 
         self.run_repo.update(run)
         logger.info(f"Run completed: {run.id}")

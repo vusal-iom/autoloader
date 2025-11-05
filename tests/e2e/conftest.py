@@ -49,6 +49,20 @@ def minio_client(minio_config: Dict[str, str], ensure_services_ready):
     except Exception as e:
         raise RuntimeError(f"Failed to connect to MinIO: {e}")
 
+    # Create lakehouse bucket for Iceberg warehouse if it doesn't exist
+    try:
+        lakehouse_bucket = "test-lakehouse"
+        existing_buckets = client.list_buckets()
+        bucket_names = [b['Name'] for b in existing_buckets.get('Buckets', [])]
+
+        if lakehouse_bucket not in bucket_names:
+            client.create_bucket(Bucket=lakehouse_bucket)
+            print(f"✅ Created lakehouse bucket: {lakehouse_bucket}")
+    except Exception as e:
+        # If bucket already exists, that's fine
+        if "BucketAlreadyOwnedByYou" not in str(e) and "BucketAlreadyExists" not in str(e):
+            raise RuntimeError(f"Failed to create lakehouse bucket: {e}")
+
     return client
 
 

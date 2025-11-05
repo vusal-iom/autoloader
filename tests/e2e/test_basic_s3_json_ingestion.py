@@ -56,6 +56,11 @@ class TestBasicS3JsonIngestion:
         print("🧪 E2E TEST: Basic S3 JSON Ingestion - Happy Path")
         print("="*80)
 
+        # Generate unique table name to avoid test pollution
+        from datetime import datetime, timezone
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+        table_name = f"e2e_test_table_{timestamp}"
+
         # ========================================================================
         # STEP 1: Create Ingestion Configuration
         # ========================================================================
@@ -85,9 +90,9 @@ class TestBasicS3JsonIngestion:
                 }
             },
             "destination": {
-                "catalog": "local",
+                "catalog": "test_catalog",
                 "database": "test_db",
-                "table": "e2e_test_table",
+                "table": table_name,
                 "write_mode": "append",
                 "partitioning": {
                     "enabled": False,
@@ -210,7 +215,8 @@ class TestBasicS3JsonIngestion:
         print(f"  Files Processed: {run.get('metrics', {}).get('files_processed', 0)}")
         print(f"  Records Ingested: {run.get('metrics', {}).get('records_ingested', 0)}")
         print(f"  Bytes Read: {run.get('metrics', {}).get('bytes_read', 0)}")
-        print(f"  Errors: {len(run.get('errors', []))}")
+        errors = run.get('errors') or []
+        print(f"  Errors: {len(errors)}")
 
         # Assertions
         assert run["status"] in ["success", "completed"]
@@ -220,7 +226,8 @@ class TestBasicS3JsonIngestion:
         metrics = run.get("metrics", {})
         assert metrics.get("files_processed", 0) == 3, "Expected 3 files processed"
         assert metrics.get("records_ingested", 0) == 3000, "Expected 3000 records ingested"
-        assert len(run.get("errors", [])) == 0, "Expected no errors"
+        errors = run.get('errors') or []
+        assert len(errors) == 0, "Expected no errors"
 
         print("  ✅ All metrics verified")
 

@@ -112,7 +112,7 @@ class BatchFileProcessor:
             df = self._read_file_infer_schema(file_path)
 
         # Step 2: Get record count (for metrics)
-        record_count = df.count()
+        record_count = int(df.count())  # Convert to Python int (from numpy.int64)
 
         if record_count == 0:
             logger.warning(f"File {file_path} is empty, skipping write")
