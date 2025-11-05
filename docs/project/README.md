@@ -17,6 +17,7 @@ This directory contains detailed technical documentation about the IOMETE Autolo
 ### Development Guides
 
 - **[Alembic Guide](./alembic-guide.md)** - Database migrations with Alembic
+- **[Pytest Fixtures Guide](./pytest-fixtures-guide.md)** - Understanding pytest fixtures, scopes, and testing patterns
 - **[Running Integration Tests in PyCharm](./running-integration-tests-in-pycharm.md)** - Setting up and running tests in PyCharm
 
 ### Architecture & Patterns
@@ -59,6 +60,7 @@ This directory contains detailed technical documentation about the IOMETE Autolo
 ✅ **Pydantic Usage** - Complete guide to Pydantic patterns in the project
 ✅ **Configuration Management** - Environment variables, settings, and configuration sources
 ✅ **Database Migrations** - Alembic setup and usage
+✅ **Pytest Fixtures** - Comprehensive guide to fixtures, scopes, and testing patterns
 ✅ **Testing** - PyCharm integration test setup
 
 ### Future Documentation
@@ -70,7 +72,6 @@ The following topics would benefit from dedicated documentation:
 🔜 **Service Layer** - Business logic organization (partially covered in project structure)
 🔜 **FastAPI Patterns** - API structure, dependency injection, error handling (partially covered in project structure)
 🔜 **Spark Connect Integration** - Connection management, session pooling
-🔜 **Testing Strategy** - Unit tests, integration tests, fixtures
 🔜 **Deployment Guide** - Production deployment and configuration
 
 ## Contributing to Documentation
