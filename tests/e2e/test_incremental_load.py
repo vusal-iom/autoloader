@@ -39,7 +39,8 @@ from .helpers import (
     verify_table_data,
     upload_json_files,
     generate_unique_table_name,
-    get_table_identifier
+    get_table_identifier,
+    print_test_summary
 )
 
 
@@ -203,14 +204,13 @@ class TestIncrementalLoad:
         logger.success("Run history verified")
 
         logger.section("✅ E2E TEST PASSED: Incremental Load (E2E-02)")
-        print(f"\nSummary:")
-        print(f"  - Ingestion ID: {ingestion_id}")
-        print(f"  - Run 1 ID: {run1_id}")
-        print(f"  - Run 2 ID: {run2_id}")
-        print(f"  - Run 1: 3 files, 3000 records")
-        print(f"  - Run 2: 2 files, 2000 records (INCREMENTAL)")
-        print(f"  - Total: 5 files, 5000 records (NO DUPLICATES)")
-        print(f"  - Table: {table_identifier}")
-        print(f"  - Status: SUCCESS ✅")
-        print(f"\n🎉 INCREMENTAL LOAD FEATURE VALIDATED!")
-        print("="*80 + "\n")
+        print_test_summary([
+            ("Ingestion ID", ingestion_id),
+            ("Run 1 ID", run1_id),
+            ("Run 2 ID", run2_id),
+            ("Run 1", "3 files, 3000 records"),
+            ("Run 2", "2 files, 2000 records (INCREMENTAL)"),
+            ("Total", "5 files, 5000 records (NO DUPLICATES)"),
+            ("Table", table_identifier),
+            ("Status", "SUCCESS ✅")
+        ], footer_message="🎉 INCREMENTAL LOAD FEATURE VALIDATED!")

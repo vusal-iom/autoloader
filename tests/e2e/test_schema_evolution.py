@@ -41,7 +41,8 @@ from .helpers import (
     verify_schema_evolution,
     upload_json_files,
     generate_unique_table_name,
-    get_table_identifier
+    get_table_identifier,
+    print_test_summary
 )
 
 
@@ -219,16 +220,15 @@ class TestSchemaEvolution:
         logger.success("All data is queryable - Schema evolution successful!")
 
         logger.section("✅ E2E TEST PASSED: Schema Evolution (E2E-03)")
-        print(f"\nSummary:")
-        print(f"  - Ingestion ID: {ingestion_id}")
-        print(f"  - Run 1 ID: {run1_id}")
-        print(f"  - Run 2 ID: {run2_id}")
-        print(f"  - Run 1: 3 files, 3000 records, 5 fields")
-        print(f"  - Run 2: 2 files, 2000 records, SCHEMA EVOLVED to 7 fields")
-        print(f"  - Total: 5 files, 5000 records")
-        print(f"  - Backward Compatibility: ✅ (old records have NULL for new fields)")
-        print(f"  - Forward Compatibility: ✅ (new records have all fields)")
-        print(f"  - Table: {table_identifier}")
-        print(f"  - Status: SUCCESS ✅")
-        print(f"\n🎉 SCHEMA EVOLUTION FEATURE VALIDATED!")
-        print("="*80 + "\n")
+        print_test_summary([
+            ("Ingestion ID", ingestion_id),
+            ("Run 1 ID", run1_id),
+            ("Run 2 ID", run2_id),
+            ("Run 1", "3 files, 3000 records, 5 fields"),
+            ("Run 2", "2 files, 2000 records, SCHEMA EVOLVED to 7 fields"),
+            ("Total", "5 files, 5000 records"),
+            ("Backward Compatibility", "✅ (old records have NULL for new fields)"),
+            ("Forward Compatibility", "✅ (new records have all fields)"),
+            ("Table", table_identifier),
+            ("Status", "SUCCESS ✅")
+        ], footer_message="🎉 SCHEMA EVOLUTION FEATURE VALIDATED!")

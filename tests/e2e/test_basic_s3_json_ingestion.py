@@ -29,7 +29,8 @@ from .helpers import (
     assert_run_metrics,
     verify_table_data,
     generate_unique_table_name,
-    get_table_identifier
+    get_table_identifier,
+    print_test_summary
 )
 
 
@@ -151,11 +152,11 @@ class TestBasicS3JsonIngestion:
         logger.success(f"Run found in history: {our_run['id']}")
 
         logger.section("✅ E2E TEST PASSED: Basic S3 JSON Ingestion - Happy Path")
-        print(f"\nSummary:")
-        print(f"  - Ingestion ID: {ingestion_id}")
-        print(f"  - Run ID: {run_id}")
-        print(f"  - Files Processed: 3")
-        print(f"  - Records Ingested: 3000")
-        print(f"  - Table: {table_identifier}")
-        print(f"  - Status: SUCCESS ✅")
-        print("="*80 + "\n")
+        print_test_summary([
+            ("Ingestion ID", ingestion_id),
+            ("Run ID", run_id),
+            ("Files Processed", 3),
+            ("Records Ingested", 3000),
+            ("Table", table_identifier),
+            ("Status", "SUCCESS ✅")
+        ])

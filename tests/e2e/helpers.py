@@ -8,6 +8,7 @@ Provides reusable utilities for end-to-end tests:
 - Table data verification
 - Test data generation
 - Logging utilities
+- Test summary formatting
 """
 
 import time
@@ -536,3 +537,31 @@ def get_table_identifier(ingestion: Dict[str, Any]) -> str:
     """
     dest = ingestion["destination"]
     return f"{dest['catalog']}.{dest['database']}.{dest['table']}"
+
+
+def print_test_summary(details: List[tuple], footer_message: Optional[str] = None):
+    """
+    Print a formatted test summary with consistent styling.
+
+    Args:
+        details: List of (label, value) tuples to display
+        footer_message: Optional message to display at the bottom
+
+    Example:
+        print_test_summary([
+            ("Ingestion ID", ingestion_id),
+            ("Run ID", run_id),
+            ("Files Processed", 3),
+            ("Records Ingested", 3000),
+            ("Table", table_identifier),
+            ("Status", "SUCCESS ✅")
+        ])
+    """
+    print(f"\nSummary:")
+    for label, value in details:
+        print(f"  - {label}: {value}")
+
+    if footer_message:
+        print(f"\n{footer_message}")
+
+    print("="*80 + "\n")
