@@ -1,0 +1,197 @@
+"""
+E2E Test Fixtures.
+
+Provides fixtures specific to end-to-end integration tests:
+- MinIO client for S3-compatible storage
+- Test bucket creation and cleanup
+- Sample JSON file generation and upload
+- Spark Connect session for data verification
+"""
+
+import pytest
+import boto3
+import json
+import os
+from typing import Generator, Dict, List
+from datetime import datetime, timezone
+from pyspark.sql import SparkSession
+
+
+@pytest.fixture(scope="session")
+def minio_config() -> Dict[str, str]:
+    """MinIO configuration from environment."""
+    return {
+        "endpoint_url": os.getenv("TEST_MINIO_ENDPOINT", "http://localhost:9000"),
+        "aws_access_key_id": os.getenv("TEST_MINIO_ACCESS_KEY", "minioadmin"),
+        "aws_secret_access_key": os.getenv("TEST_MINIO_SECRET_KEY", "minioadmin"),
+        "region_name": "us-east-1"
+    }
+
+
+@pytest.fixture(scope="session")
+def minio_client(minio_config: Dict[str, str], ensure_services_ready):
+    """
+    Create boto3 S3 client for MinIO.
+
+    Uses MinIO from docker-compose.test.yml on localhost:9000.
+    """
+    client = boto3.client(
+        's3',
+        endpoint_url=minio_config["endpoint_url"],
+        aws_access_key_id=minio_config["aws_access_key_id"],
+        aws_secret_access_key=minio_config["aws_secret_access_key"],
+        region_name=minio_config["region_name"]
+    )
+
+    # Verify connection
+    try:
+        client.list_buckets()
+    except Exception as e:
+        raise RuntimeError(f"Failed to connect to MinIO: {e}")
+
+    return client
+
+
+@pytest.fixture(scope="function")
+def test_bucket(minio_client) -> Generator[str, None, None]:
+    """
+    Create a test bucket for each test and clean up after.
+
+    Yields:
+        Bucket name (e.g., "test-bucket-12345678")
+    """
+    # Generate unique bucket name
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+    bucket_name = f"test-bucket-{timestamp}"
+
+    # Create bucket
+    try:
+        minio_client.create_bucket(Bucket=bucket_name)
+        print(f"\n✅ Created test bucket: {bucket_name}")
+    except Exception as e:
+        raise RuntimeError(f"Failed to create bucket {bucket_name}: {e}")
+
+    yield bucket_name
+
+    # Cleanup: Delete all objects in bucket
+    try:
+        # List and delete all objects
+        response = minio_client.list_objects_v2(Bucket=bucket_name)
+
+        if 'Contents' in response:
+            objects_to_delete = [{'Key': obj['Key']} for obj in response['Contents']]
+            minio_client.delete_objects(
+                Bucket=bucket_name,
+                Delete={'Objects': objects_to_delete}
+            )
+
+        # Delete bucket
+        minio_client.delete_bucket(Bucket=bucket_name)
+        print(f"🧹 Cleaned up test bucket: {bucket_name}")
+
+    except Exception as e:
+        print(f"⚠️  Warning: Failed to cleanup bucket {bucket_name}: {e}")
+
+
+@pytest.fixture(scope="function")
+def sample_json_files(minio_client, test_bucket) -> List[Dict[str, any]]:
+    """
+    Generate and upload sample JSON files to MinIO.
+
+    Creates 3 JSON files with 1000 records each.
+    Total: 3000 records.
+
+    Returns:
+        List of file metadata dicts with keys: path, size, key
+    """
+    num_files = int(os.getenv("TEST_DATA_NUM_FILES", "3"))
+    records_per_file = int(os.getenv("TEST_DATA_RECORDS_PER_FILE", "1000"))
+
+    files_created = []
+
+    for file_idx in range(num_files):
+        # Generate data for this file
+        records = []
+        for record_idx in range(records_per_file):
+            record_id = file_idx * records_per_file + record_idx
+            record = {
+                "id": record_id,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "user_id": f"user-{record_id % 100}",
+                "event_type": ["login", "pageview", "click", "purchase"][record_id % 4],
+                "value": record_id * 10.5
+            }
+            records.append(record)
+
+        # Convert to newline-delimited JSON
+        file_content = "\n".join([json.dumps(record) for record in records])
+
+        # Upload to MinIO
+        key = f"data/batch_{file_idx}.json"
+        minio_client.put_object(
+            Bucket=test_bucket,
+            Key=key,
+            Body=file_content.encode('utf-8')
+        )
+
+        file_path = f"s3://{test_bucket}/{key}"
+        file_size = len(file_content.encode('utf-8'))
+
+        files_created.append({
+            "path": file_path,
+            "key": key,
+            "size": file_size,
+            "records": len(records)
+        })
+
+        print(f"  ✅ Uploaded: {key} ({len(records)} records, {file_size} bytes)")
+
+    print(f"📁 Created {len(files_created)} test files with {num_files * records_per_file} total records\n")
+
+    return files_created
+
+
+@pytest.fixture(scope="session")
+def spark_connect_url() -> str:
+    """Get Spark Connect URL from environment."""
+    return os.getenv("TEST_SPARK_CONNECT_URL", "sc://localhost:15002")
+
+
+@pytest.fixture(scope="function")
+def spark_session(spark_connect_url: str, ensure_services_ready) -> Generator[SparkSession, None, None]:
+    """
+    Create Spark Connect session for data verification.
+
+    Uses Spark from docker-compose.test.yml on localhost:15002.
+    """
+    try:
+        spark = SparkSession.builder \
+            .remote(spark_connect_url) \
+            .appName("E2E-Test-Verification") \
+            .getOrCreate()
+
+        print(f"✅ Connected to Spark: {spark_connect_url}\n")
+
+        yield spark
+
+        # Cleanup
+        spark.stop()
+        print("🧹 Stopped Spark session")
+
+    except Exception as e:
+        raise RuntimeError(
+            f"Failed to connect to Spark Connect at {spark_connect_url}: {e}\n"
+            "Ensure Spark is running: docker-compose -f docker-compose.test.yml up -d"
+        )
+
+
+@pytest.fixture(scope="function")
+def test_tenant_id() -> str:
+    """Get test tenant ID from environment."""
+    return os.getenv("TEST_TENANT_ID", "test-tenant-001")
+
+
+@pytest.fixture(scope="function")
+def test_cluster_id() -> str:
+    """Get test cluster ID from environment."""
+    return os.getenv("TEST_CLUSTER_ID", "test-cluster-001")

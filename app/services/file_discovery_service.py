@@ -50,7 +50,7 @@ class FileDiscoveryService:
             credentials: Dict with aws_access_key_id, aws_secret_access_key
             region: AWS region (default: us-east-1)
         """
-        if source_type != "S3":
+        if source_type.upper() != "S3":
             raise ValueError(f"Unsupported source type for Phase 1: {source_type}. Only S3 is supported.")
 
         self.source_type = source_type
@@ -176,7 +176,8 @@ class FileDiscoveryService:
 
             # Create S3 client
             # Check if custom endpoint is provided (for MinIO, LocalStack, etc.)
-            endpoint = self.credentials.get("endpoint")
+            # Support both "endpoint" and "endpoint_url" for flexibility
+            endpoint = self.credentials.get("endpoint_url") or self.credentials.get("endpoint")
 
             client_kwargs = {
                 'aws_access_key_id': aws_access_key_id,
