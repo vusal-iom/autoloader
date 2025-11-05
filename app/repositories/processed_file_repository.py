@@ -273,6 +273,26 @@ class ProcessedFileRepository:
         self.db.refresh(file_record)
         return file_record
 
+    def delete_by_ingestion(self, ingestion_id: str) -> int:
+        """
+        Delete all ProcessedFile records for a specific ingestion.
+
+        This allows users to clear file tracking history and reprocess files.
+        Use case: Manual "overwrite mode" by deleting table + clearing processed files.
+
+        Args:
+            ingestion_id: Ingestion ID to clear files for
+
+        Returns:
+            Number of records deleted
+        """
+        count = self.db.query(ProcessedFile).filter(
+            ProcessedFile.ingestion_id == ingestion_id
+        ).delete()
+        self.db.commit()
+        logger.info(f"Deleted {count} ProcessedFile records for ingestion {ingestion_id}")
+        return count
+
     def _file_changed(self, record: ProcessedFile, metadata: dict) -> bool:
         """
         Check if file has been modified since last processing.

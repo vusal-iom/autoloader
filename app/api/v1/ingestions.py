@@ -12,6 +12,7 @@ from app.models.schemas import (
     CostBreakdown,
 )
 from app.services.ingestion_service import IngestionService
+from app.services.file_state_service import FileStateService
 
 router = APIRouter(prefix="/ingestions", tags=["ingestions"])
 
@@ -19,6 +20,11 @@ router = APIRouter(prefix="/ingestions", tags=["ingestions"])
 def get_ingestion_service(db: Session = Depends(get_db)) -> IngestionService:
     """Get ingestion service instance."""
     return IngestionService(db)
+
+
+def get_file_state_service(db: Session = Depends(get_db)) -> FileStateService:
+    """Get file state service instance."""
+    return FileStateService(db)
 
 
 @router.post("", response_model=IngestionResponse, status_code=status.HTTP_201_CREATED)
@@ -161,6 +167,42 @@ async def resume_ingestion(
             detail=f"Ingestion {ingestion_id} not found",
         )
     return {"status": "active"}
+
+
+@router.delete("/{ingestion_id}/processed-files", status_code=status.HTTP_200_OK)
+async def clear_processed_files(
+    ingestion_id: str,
+    ingestion_service: IngestionService = Depends(get_ingestion_service),
+    file_state_service: FileStateService = Depends(get_file_state_service),
+):
+    """
+    Clear all processed file records for an ingestion.
+
+    This allows reprocessing all files from scratch without deleting the ingestion configuration.
+
+    Use cases:
+    - Manual "overwrite mode": Delete table + call this endpoint to reprocess all files
+    - Keep table but reprocess: Just call this endpoint to reprocess existing files
+    - Data quality fixes: Clear history and reprocess with corrected logic
+
+    Note: This does NOT delete the ingestion configuration or the target table.
+    """
+    # Verify ingestion exists
+    ingestion = ingestion_service.get_ingestion(ingestion_id)
+    if not ingestion:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Ingestion {ingestion_id} not found",
+        )
+
+    # Clear processed files
+    count = file_state_service.clear_processed_files(ingestion_id)
+
+    return {
+        "message": f"Cleared {count} processed file records",
+        "files_cleared": count,
+        "ingestion_id": ingestion_id,
+    }
 
 
 @router.post("/test", response_model=PreviewResult)

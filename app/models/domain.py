@@ -66,7 +66,9 @@ class Ingestion(Base):
     destination_catalog = Column(String, nullable=False)
     destination_database = Column(String, nullable=False)
     destination_table = Column(String, nullable=False)
-    write_mode = Column(String, default="append")  # append, overwrite, merge
+    # write_mode: Only "append" is supported. "overwrite" and "merge" are not implemented.
+    # For full refresh, see docs/overwrite-mode-alternative.md
+    write_mode = Column(String, default="append")
     partitioning_enabled = Column(Boolean, default=False)
     partitioning_columns = Column(JSON, nullable=True)
     z_ordering_enabled = Column(Boolean, default=False)

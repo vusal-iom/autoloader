@@ -1,5 +1,5 @@
 """Pydantic schemas for API requests and responses."""
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 from enum import Enum
@@ -72,9 +72,31 @@ class DestinationConfig(BaseModel):
     catalog: str
     database: str
     table: str
-    write_mode: str = Field(default="append", description="append, overwrite, merge")
+    write_mode: str = Field(
+        default="append",
+        description="Write mode: 'append' only. Note: 'overwrite' and 'merge' are not supported. "
+                    "For full refresh, see docs/overwrite-mode-alternative.md"
+    )
     partitioning: Optional[PartitioningConfig] = PartitioningConfig()
     optimization: Optional[OptimizationConfig] = OptimizationConfig()
+
+    @field_validator('write_mode')
+    @classmethod
+    def validate_write_mode(cls, v: str) -> str:
+        """
+        Validate write_mode is supported.
+
+        Only 'append' mode is supported. Overwrite and merge are not implemented.
+        For overwrite-like behavior, see docs/overwrite-mode-alternative.md
+        """
+        allowed = ['append']
+        if v not in allowed:
+            raise ValueError(
+                f"write_mode '{v}' is not supported. Only 'append' is supported. "
+                f"For full refresh behavior, delete the table and optionally clear processed files. "
+                f"See docs/overwrite-mode-alternative.md for details."
+            )
+        return v
 
 
 # Schedule Configuration

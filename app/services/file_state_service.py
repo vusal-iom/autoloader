@@ -89,3 +89,20 @@ class FileStateService:
     def mark_file_skipped(self, file_record: ProcessedFile, reason: str):
         """Mark file as skipped (e.g., too large, schema mismatch)"""
         self.repo.mark_skipped(file_record, reason)
+
+    def clear_processed_files(self, ingestion_id: str) -> int:
+        """
+        Clear all processed file records for an ingestion.
+
+        This allows users to reprocess all files from scratch.
+        Use case: Manual "overwrite mode" by deleting table + clearing processed files.
+
+        Args:
+            ingestion_id: Ingestion ID to clear files for
+
+        Returns:
+            Number of records deleted
+        """
+        count = self.repo.delete_by_ingestion(ingestion_id)
+        logger.info(f"Cleared {count} processed files for ingestion {ingestion_id}")
+        return count
