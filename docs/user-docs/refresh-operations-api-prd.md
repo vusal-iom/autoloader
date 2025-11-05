@@ -97,47 +97,66 @@ curl -X POST /api/v1/ingestions/123/run
 
 | Endpoint | Method | Purpose | Use Case |
 |----------|--------|---------|----------|
-| `/ingestions/{id}/full-refresh` | POST | Drop table + clear files + run | Data fixes, complete reload |
-| `/ingestions/{id}/fresh-start` | POST | Drop table + run (keep file history) | Fresh table, new files only |
+| `/ingestions/{id}/refresh` | POST | Drop table + optional clear files + run | Table refresh (all files or new only) |
 | `/ingestions/{id}/table` | DELETE | Drop table only | Manual cleanup, advanced workflows |
 | `/ingestions/{id}/processed-files` | DELETE | Clear file history only | (Existing) Backfill, reprocess |
 | `/ingestions/{id}/run` | POST | Trigger run only | (Existing) Normal execution |
+
+**Note:** The `/refresh` endpoint supports two modes via `reprocess_all` parameter:
+- `reprocess_all: true` - Reprocess ALL files (clears history)
+- `reprocess_all: false` - Process NEW files only (keeps history)
 
 ---
 
 ## API Specification
 
-### 1. Full Refresh
+### 1. Refresh Table
 
-**Endpoint:** `POST /api/v1/ingestions/{ingestion_id}/full-refresh`
+**Endpoint:** `POST /api/v1/ingestions/{ingestion_id}/refresh`
 
-**Description:** Performs a complete table refresh by dropping the table, clearing all processed file history, and triggering a new ingestion run. This reprocesses ALL source files from scratch.
+**Description:** Performs a table refresh by dropping the table and triggering a new ingestion run. Supports two modes:
+- **Reprocess All** (`reprocess_all: true`): Clears processed file history and reprocesses ALL source files from scratch
+- **Incremental** (`reprocess_all: false`): Keeps processed file history and only processes NEW files added since last run
 
 **Use Cases:**
+
+**When to use `reprocess_all: true` (Reprocess All Files):**
 - Data quality fixes requiring reprocessing of all historical files
 - Source files were corrected/updated retroactively
 - Complete snapshot refresh from all source files
 - Testing: replay entire ingestion from beginning
 
+**When to use `reprocess_all: false` (New Files Only):**
+- Recover from corrupted table without reprocessing historical data
+- Change table structure/schema (force recreation)
+- Fresh table for new files only (skip historical data)
+- Testing: clean slate without expensive reprocessing
+
 **Request:**
 
 ```json
-POST /api/v1/ingestions/ing-abc123/full-refresh
+POST /api/v1/ingestions/ing-abc123/refresh
 
 {
-  "confirm": true,        // REQUIRED: Must be true (safety mechanism)
-  "auto_run": true,       // Optional: Trigger run immediately (default: true)
-  "dry_run": false        // Optional: Preview without executing (default: false)
+  "confirm": true,         // REQUIRED: Must be true (safety mechanism)
+  "reprocess_all": false,  // Optional: true = all files, false = new only (default: false)
+  "auto_run": true,        // Optional: Trigger run immediately (default: true)
+  "dry_run": false         // Optional: Preview without executing (default: false)
 }
 ```
 
 **Request Schema:**
 
 ```python
-class FullRefreshRequest(BaseModel):
+class RefreshRequest(BaseModel):
     confirm: bool = Field(
         ...,
         description="Must be true to proceed. Safety confirmation required."
+    )
+    reprocess_all: bool = Field(
+        default=False,
+        description="If true, clears file history and reprocesses ALL files. "
+                    "If false, keeps history and processes only NEW files (cost-effective default)."
     )
     auto_run: bool = Field(
         default=True,
@@ -155,15 +174,16 @@ class FullRefreshRequest(BaseModel):
         return v
 ```
 
-**Success Response (202 Accepted):**
+**Success Response (202 Accepted) - Reprocess All (`reprocess_all: true`):**
 
 ```json
 {
   "status": "accepted",
-  "message": "Full refresh completed successfully",
+  "message": "Table refresh completed successfully",
   "ingestion_id": "ing-abc123",
   "run_id": "run-xyz789",
   "timestamp": "2025-01-05T10:30:00Z",
+  "reprocess_all": true,
 
   "operations": [
     {
@@ -211,13 +231,63 @@ class FullRefreshRequest(BaseModel):
 }
 ```
 
-**Dry Run Response (200 OK):**
+**Success Response (202 Accepted) - Incremental (`reprocess_all: false`):**
+
+```json
+{
+  "status": "accepted",
+  "message": "Table refresh completed successfully",
+  "ingestion_id": "ing-abc123",
+  "run_id": "run-xyz789",
+  "timestamp": "2025-01-05T10:30:00Z",
+  "reprocess_all": false,
+
+  "operations": [
+    {
+      "operation": "table_dropped",
+      "status": "success",
+      "timestamp": "2025-01-05T10:30:01Z",
+      "details": {
+        "table_name": "raw.sales_data",
+        "table_size_gb": 450.2,
+        "row_count": 12450000
+      }
+    },
+    {
+      "operation": "run_triggered",
+      "status": "success",
+      "timestamp": "2025-01-05T10:30:02Z",
+      "details": {
+        "run_id": "run-xyz789",
+        "run_url": "/api/v1/runs/run-xyz789"
+      }
+    }
+  ],
+
+  "impact": {
+    "files_to_process": 23,
+    "files_skipped": 1247,
+    "estimated_data_size_gb": 8.5,
+    "estimated_cost_usd": 2.30,
+    "estimated_duration_minutes": 5
+  },
+
+  "notes": [
+    "Table dropped and recreated",
+    "Only NEW files (added since last run) will be processed",
+    "Processed file history preserved (1,247 files remain marked as processed)"
+  ]
+}
+```
+
+**Dry Run Response (200 OK) - Reprocess All (`reprocess_all: true`):**
 
 ```json
 {
   "status": "dry_run",
   "message": "Preview of operations (not executed)",
   "ingestion_id": "ing-abc123",
+  "reprocess_all": true,
 
   "would_perform": [
     {
@@ -258,7 +328,57 @@ class FullRefreshRequest(BaseModel):
   ],
 
   "next_steps": {
-    "to_proceed": "POST /api/v1/ingestions/ing-abc123/full-refresh with confirm=true",
+    "to_proceed": "POST /api/v1/ingestions/ing-abc123/refresh with confirm=true, reprocess_all=true",
+    "to_cancel": "No action needed"
+  }
+}
+```
+
+**Dry Run Response (200 OK) - Incremental (`reprocess_all: false`):**
+
+```json
+{
+  "status": "dry_run",
+  "message": "Preview of operations (not executed)",
+  "ingestion_id": "ing-abc123",
+  "reprocess_all": false,
+
+  "would_perform": [
+    {
+      "operation": "table_dropped",
+      "details": {
+        "table_name": "raw.sales_data",
+        "current_size_gb": 450.2,
+        "current_row_count": 12450000
+      }
+    },
+    {
+      "operation": "run_triggered",
+      "details": {
+        "files_to_process": 23,
+        "new_files_only": true,
+        "data_size_gb": 8.5
+      }
+    }
+  ],
+
+  "impact": {
+    "files_to_process": 23,
+    "files_skipped": 1247,
+    "estimated_data_size_gb": 8.5,
+    "estimated_cost_usd": 2.30,
+    "estimated_duration_minutes": 5
+  },
+
+  "notes": [
+    "ℹ️ Table will be dropped and recreated",
+    "ℹ️ Only 23 NEW files will be processed",
+    "ℹ️ 1,247 previously processed files will be skipped",
+    "💰 Cost-effective: Only processes incremental data"
+  ],
+
+  "next_steps": {
+    "to_proceed": "POST /api/v1/ingestions/ing-abc123/refresh with confirm=true, reprocess_all=false",
     "to_cancel": "No action needed"
   }
 }
@@ -321,155 +441,7 @@ class FullRefreshRequest(BaseModel):
 
 ---
 
-### 2. Fresh Start
-
-**Endpoint:** `POST /api/v1/ingestions/{ingestion_id}/fresh-start`
-
-**Description:** Drops the target table and triggers a new ingestion run, but keeps the processed file history intact. Only processes files that were added since the last successful run (incremental behavior with a fresh table).
-
-**Use Cases:**
-- Recover from corrupted table without reprocessing historical data
-- Change table structure/schema (force recreation)
-- Fresh table for new files only (skip historical data)
-- Testing: clean slate without expensive reprocessing
-
-**Request:**
-
-```json
-POST /api/v1/ingestions/ing-abc123/fresh-start
-
-{
-  "confirm": true,        // REQUIRED: Must be true (safety mechanism)
-  "auto_run": true,       // Optional: Trigger run immediately (default: true)
-  "dry_run": false        // Optional: Preview without executing (default: false)
-}
-```
-
-**Request Schema:**
-
-```python
-class FreshStartRequest(BaseModel):
-    confirm: bool = Field(
-        ...,
-        description="Must be true to proceed. Safety confirmation required."
-    )
-    auto_run: bool = Field(
-        default=True,
-        description="Automatically trigger ingestion run after dropping table"
-    )
-    dry_run: bool = Field(
-        default=False,
-        description="Preview operations without executing them"
-    )
-
-    @validator('confirm')
-    def confirm_must_be_true(cls, v):
-        if not v:
-            raise ValueError("Must explicitly confirm with confirm=true")
-        return v
-```
-
-**Success Response (202 Accepted):**
-
-```json
-{
-  "status": "accepted",
-  "message": "Fresh start completed successfully",
-  "ingestion_id": "ing-abc123",
-  "run_id": "run-xyz789",
-  "timestamp": "2025-01-05T10:30:00Z",
-
-  "operations": [
-    {
-      "operation": "table_dropped",
-      "status": "success",
-      "timestamp": "2025-01-05T10:30:01Z",
-      "details": {
-        "table_name": "raw.sales_data",
-        "table_size_gb": 450.2,
-        "row_count": 12450000
-      }
-    },
-    {
-      "operation": "run_triggered",
-      "status": "success",
-      "timestamp": "2025-01-05T10:30:02Z",
-      "details": {
-        "run_id": "run-xyz789",
-        "run_url": "/api/v1/runs/run-xyz789"
-      }
-    }
-  ],
-
-  "impact": {
-    "files_to_process": 23,  // Only NEW files
-    "estimated_data_size_gb": 8.5,
-    "estimated_cost_usd": 2.30,
-    "estimated_duration_minutes": 5
-  },
-
-  "notes": [
-    "Table dropped and recreated",
-    "Only NEW files (added since last run) will be processed",
-    "Processed file history preserved (1,247 files remain marked as processed)"
-  ]
-}
-```
-
-**Dry Run Response (200 OK):**
-
-```json
-{
-  "status": "dry_run",
-  "message": "Preview of operations (not executed)",
-  "ingestion_id": "ing-abc123",
-
-  "would_perform": [
-    {
-      "operation": "table_dropped",
-      "details": {
-        "table_name": "raw.sales_data",
-        "current_size_gb": 450.2,
-        "current_row_count": 12450000
-      }
-    },
-    {
-      "operation": "run_triggered",
-      "details": {
-        "files_to_process": 23,
-        "new_files_only": true,
-        "data_size_gb": 8.5
-      }
-    }
-  ],
-
-  "impact": {
-    "files_to_process": 23,
-    "files_skipped": 1247,
-    "estimated_data_size_gb": 8.5,
-    "estimated_cost_usd": 2.30,
-    "estimated_duration_minutes": 5
-  },
-
-  "notes": [
-    "ℹ️ Table will be dropped and recreated",
-    "ℹ️ Only 23 NEW files will be processed",
-    "ℹ️ 1,247 previously processed files will be skipped",
-    "💰 Cost-effective: Only processes incremental data"
-  ],
-
-  "next_steps": {
-    "to_proceed": "POST /api/v1/ingestions/ing-abc123/fresh-start with confirm=true",
-    "to_cancel": "No action needed"
-  }
-}
-```
-
-**Error Responses:** Same as Full Refresh (see above)
-
----
-
-### 3. Drop Table
+### 2. Drop Table
 
 **Endpoint:** `DELETE /api/v1/ingestions/{ingestion_id}/table`
 
@@ -580,21 +552,31 @@ class DropTableRequest(BaseModel):
 
 ## Request/Response Schemas
 
-### Common Request Schema
+### Refresh Request Schema
 
-All refresh operations share a common base schema:
+The refresh endpoint uses the following request schema:
 
 ```python
 from pydantic import BaseModel, Field, validator
 from typing import Optional
 
-class RefreshOperationRequest(BaseModel):
-    """Base schema for refresh operations."""
+class RefreshRequest(BaseModel):
+    """Request schema for table refresh operation."""
 
     confirm: bool = Field(
         ...,
         description="Must be true to proceed. Safety confirmation required.",
         example=True
+    )
+
+    reprocess_all: bool = Field(
+        default=False,
+        description=(
+            "If true, clears file history and reprocesses ALL files. "
+            "If false, keeps history and processes only NEW files. "
+            "Defaults to false (cost-effective incremental mode)."
+        ),
+        example=False
     )
 
     auto_run: Optional[bool] = Field(
@@ -622,10 +604,30 @@ class RefreshOperationRequest(BaseModel):
         schema_extra = {
             "example": {
                 "confirm": True,
+                "reprocess_all": False,
                 "auto_run": True,
                 "dry_run": False
             }
         }
+```
+
+### Drop Table Request Schema
+
+```python
+class DropTableRequest(BaseModel):
+    """Request schema for drop table operation."""
+
+    confirm: bool = Field(
+        ...,
+        description="Must be true to proceed. Safety confirmation required.",
+        example=True
+    )
+
+    @validator('confirm')
+    def confirm_must_be_true(cls, v):
+        if not v:
+            raise ValueError("Must explicitly confirm with confirm=true")
+        return v
 ```
 
 ### Common Response Schema
@@ -782,20 +784,23 @@ class RefreshService:
         self.ingestion_service = ingestion_service
         self.ingestion_repo = ingestion_repo
 
-    async def full_refresh(
+    async def refresh(
         self,
         ingestion_id: str,
         confirm: bool,
+        reprocess_all: bool = False,
         auto_run: bool = True,
         dry_run: bool = False,
         db: Session = None
     ) -> Dict[str, Any]:
         """
-        Perform full refresh: drop table + clear files + run.
+        Perform table refresh: drop table + optional clear files + run.
 
         Args:
             ingestion_id: Ingestion identifier
             confirm: Safety confirmation (must be True)
+            reprocess_all: If True, clears file history and reprocesses ALL files.
+                          If False, keeps history and processes only NEW files.
             auto_run: Trigger run after refresh
             dry_run: Preview without executing
             db: Database session
@@ -815,15 +820,33 @@ class RefreshService:
         if not ingestion:
             raise ValueError(f"Ingestion not found: {ingestion_id}")
 
-        # Get impact estimate
-        impact = await self._estimate_full_refresh_impact(ingestion, db)
+        # Get impact estimate (varies based on reprocess_all)
+        if reprocess_all:
+            impact = await self._estimate_full_refresh_impact(ingestion, db)
+        else:
+            impact = await self._estimate_incremental_refresh_impact(ingestion, db)
+
+        # Build operations list based on mode
+        operations_list = ["table_dropped"]
+        if reprocess_all:
+            operations_list.append("processed_files_cleared")
+        operations_list.append("run_triggered")
 
         # Dry run - return preview
         if dry_run:
+            notes = []
+            if reprocess_all:
+                notes.append("⚠️ This will reprocess ALL files from scratch")
+            else:
+                notes.append("ℹ️ Only NEW files will be processed")
+                notes.append("ℹ️ Processed file history will be preserved")
+
             return self._build_dry_run_response(
                 ingestion_id=ingestion_id,
-                operations=["table_dropped", "processed_files_cleared", "run_triggered"],
-                impact=impact
+                operations=operations_list,
+                impact=impact,
+                reprocess_all=reprocess_all,
+                notes=notes
             )
 
         # Execute operations
@@ -846,24 +869,25 @@ class RefreshService:
             })
             return self._build_error_response(ingestion_id, operations, e)
 
-        # Step 2: Clear processed files
-        try:
-            files_cleared = await self.file_state.clear_all_processed(
-                ingestion_id, db
-            )
-            operations.append({
-                "operation": "processed_files_cleared",
-                "status": "success",
-                "details": {"files_cleared": files_cleared}
-            })
-        except Exception as e:
-            logger.error(f"Failed to clear processed files: {e}")
-            operations.append({
-                "operation": "processed_files_cleared",
-                "status": "failed",
-                "error": str(e)
-            })
-            return self._build_error_response(ingestion_id, operations, e)
+        # Step 2: Clear processed files (only if reprocess_all=true)
+        if reprocess_all:
+            try:
+                files_cleared = await self.file_state.clear_all_processed(
+                    ingestion_id, db
+                )
+                operations.append({
+                    "operation": "processed_files_cleared",
+                    "status": "success",
+                    "details": {"files_cleared": files_cleared}
+                })
+            except Exception as e:
+                logger.error(f"Failed to clear processed files: {e}")
+                operations.append({
+                    "operation": "processed_files_cleared",
+                    "status": "failed",
+                    "error": str(e)
+                })
+                return self._build_error_response(ingestion_id, operations, e)
 
         # Step 3: Trigger run (if auto_run)
         run_id = None
@@ -890,112 +914,23 @@ class RefreshService:
                 })
                 return self._build_error_response(ingestion_id, operations, e)
 
-        return self._build_success_response(
-            ingestion_id=ingestion_id,
-            run_id=run_id,
-            operations=operations,
-            impact=impact
-        )
-
-    async def fresh_start(
-        self,
-        ingestion_id: str,
-        confirm: bool,
-        auto_run: bool = True,
-        dry_run: bool = False,
-        db: Session = None
-    ) -> Dict[str, Any]:
-        """
-        Perform fresh start: drop table + run (keep file history).
-
-        Args:
-            ingestion_id: Ingestion identifier
-            confirm: Safety confirmation (must be True)
-            auto_run: Trigger run after dropping table
-            dry_run: Preview without executing
-            db: Database session
-
-        Returns:
-            Operation result with details
-        """
-        if not confirm:
-            raise ValueError("Confirmation required. Set confirm=true to proceed.")
-
-        # Get ingestion
-        ingestion = self.ingestion_repo.get_by_id(db, ingestion_id)
-        if not ingestion:
-            raise ValueError(f"Ingestion not found: {ingestion_id}")
-
-        # Get impact estimate (only NEW files)
-        impact = await self._estimate_fresh_start_impact(ingestion, db)
-
-        # Dry run - return preview
-        if dry_run:
-            return self._build_dry_run_response(
-                ingestion_id=ingestion_id,
-                operations=["table_dropped", "run_triggered"],
-                impact=impact,
-                notes=[
-                    "Only NEW files (added since last run) will be processed",
-                    "Processed file history will be preserved"
-                ]
-            )
-
-        # Execute operations
-        operations = []
-
-        # Step 1: Drop table
-        try:
-            table_info = await self.spark.drop_table(ingestion.destination.table)
-            operations.append({
-                "operation": "table_dropped",
-                "status": "success",
-                "details": table_info
-            })
-        except Exception as e:
-            logger.error(f"Failed to drop table: {e}")
-            operations.append({
-                "operation": "table_dropped",
-                "status": "failed",
-                "error": str(e)
-            })
-            return self._build_error_response(ingestion_id, operations, e)
-
-        # Step 2: Trigger run (if auto_run)
-        run_id = None
-        if auto_run:
-            try:
-                run = await self.ingestion_service.trigger_run(
-                    ingestion_id, db
-                )
-                run_id = run.id
-                operations.append({
-                    "operation": "run_triggered",
-                    "status": "success",
-                    "details": {
-                        "run_id": run_id,
-                        "run_url": f"/api/v1/runs/{run_id}"
-                    }
-                })
-            except Exception as e:
-                logger.error(f"Failed to trigger run: {e}")
-                operations.append({
-                    "operation": "run_triggered",
-                    "status": "failed",
-                    "error": str(e)
-                })
-                return self._build_error_response(ingestion_id, operations, e)
+        # Build response notes
+        notes = []
+        if reprocess_all:
+            notes.append("Table dropped and will be recreated")
+            notes.append("ALL files will be reprocessed")
+        else:
+            notes.append("Table dropped and will be recreated")
+            notes.append("Only NEW files will be processed")
+            notes.append("Processed file history preserved")
 
         return self._build_success_response(
             ingestion_id=ingestion_id,
             run_id=run_id,
             operations=operations,
             impact=impact,
-            notes=[
-                "Table dropped and will be recreated",
-                "Only NEW files will be processed",
-                f"Processed file history preserved"
-            ]
+            reprocess_all=reprocess_all,
+            notes=notes
         )
 
     async def drop_table(
@@ -1066,12 +1001,12 @@ class RefreshService:
             "estimated_duration_minutes": estimated_duration
         }
 
-    async def _estimate_fresh_start_impact(
+    async def _estimate_incremental_refresh_impact(
         self,
         ingestion: Ingestion,
         db: Session
     ) -> Dict[str, Any]:
-        """Estimate impact of fresh start (NEW files only)."""
+        """Estimate impact of incremental refresh (NEW files only)."""
         # Get only NEW files (not in processed history)
         new_files = await self.file_state.list_new_files(ingestion, db)
         total_size_gb = sum(f.size_bytes for f in new_files) / (1024**3)
@@ -1150,8 +1085,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.services.refresh_service import RefreshService
 from app.models.schemas import (
-    FullRefreshRequest,
-    FreshStartRequest,
+    RefreshRequest,
     DropTableRequest,
     RefreshOperationResponse
 )
@@ -1160,37 +1094,45 @@ from typing import Dict, Any
 router = APIRouter(prefix="/api/v1/ingestions", tags=["Refresh Operations"])
 
 @router.post(
-    "/{ingestion_id}/full-refresh",
+    "/{ingestion_id}/refresh",
     response_model=RefreshOperationResponse,
     status_code=status.HTTP_202_ACCEPTED,
-    summary="Full Refresh",
+    summary="Refresh Table",
     description="""
-    Performs a complete table refresh by:
-    1. Dropping the target table
-    2. Clearing all processed file history
-    3. Triggering a new ingestion run
+    Performs a table refresh by dropping the table and triggering a new ingestion run.
+    Supports two modes via the `reprocess_all` parameter:
 
-    This reprocesses ALL source files from scratch.
+    **Reprocess All (`reprocess_all: true`):**
+    1. Drops the target table
+    2. Clears all processed file history
+    3. Triggers a new ingestion run
+    - Reprocesses ALL source files from scratch
+
+    **Incremental (`reprocess_all: false`, default):**
+    1. Drops the target table
+    2. Keeps processed file history intact
+    3. Triggers a new ingestion run
+    - Only processes NEW files added since last run
 
     **Use Cases:**
-    - Data quality fixes requiring reprocessing of all historical files
-    - Source files were corrected/updated retroactively
-    - Complete snapshot refresh from all source files
+    - `reprocess_all: true` - Data quality fixes, source file corrections, complete snapshots
+    - `reprocess_all: false` - Recover from corrupted table, schema changes, cost-effective refresh
 
     **Safety:** Requires explicit confirmation. Supports dry-run mode.
     """
 )
-async def full_refresh(
+async def refresh(
     ingestion_id: str,
-    request: FullRefreshRequest,
+    request: RefreshRequest,
     db: Session = Depends(get_db),
     refresh_service: RefreshService = Depends()
 ) -> Dict[str, Any]:
-    """Full refresh: drop table + clear files + run."""
+    """Refresh table with optional file history clearing."""
     try:
-        return await refresh_service.full_refresh(
+        return await refresh_service.refresh(
             ingestion_id=ingestion_id,
             confirm=request.confirm,
+            reprocess_all=request.reprocess_all,
             auto_run=request.auto_run,
             dry_run=request.dry_run,
             db=db
@@ -1204,51 +1146,6 @@ async def full_refresh(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Refresh operation failed: {str(e)}"
-        )
-
-@router.post(
-    "/{ingestion_id}/fresh-start",
-    response_model=RefreshOperationResponse,
-    status_code=status.HTTP_202_ACCEPTED,
-    summary="Fresh Start",
-    description="""
-    Drops the target table and triggers a new ingestion run,
-    but keeps the processed file history intact.
-
-    Only processes files that were added since the last successful run.
-
-    **Use Cases:**
-    - Recover from corrupted table without reprocessing historical data
-    - Change table structure/schema (force recreation)
-    - Fresh table for new files only (skip historical data)
-
-    **Safety:** Requires explicit confirmation. Supports dry-run mode.
-    """
-)
-async def fresh_start(
-    ingestion_id: str,
-    request: FreshStartRequest,
-    db: Session = Depends(get_db),
-    refresh_service: RefreshService = Depends()
-) -> Dict[str, Any]:
-    """Fresh start: drop table + run (keep file history)."""
-    try:
-        return await refresh_service.fresh_start(
-            ingestion_id=ingestion_id,
-            confirm=request.confirm,
-            auto_run=request.auto_run,
-            dry_run=request.dry_run,
-            db=db
-        )
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Fresh start operation failed: {str(e)}"
         )
 
 @router.delete(
@@ -1544,11 +1441,12 @@ curl -X POST "https://api.iomete.com/api/v1/ingestions/$INGESTION_ID/run" \
 INGESTION_ID="users-snapshot"
 
 # Single API call with safety and visibility
-curl -X POST "https://api.iomete.com/api/v1/ingestions/$INGESTION_ID/full-refresh" \
+curl -X POST "https://api.iomete.com/api/v1/ingestions/$INGESTION_ID/refresh" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "confirm": true,
+    "reprocess_all": true,
     "auto_run": true
   }'
 ```
@@ -1590,11 +1488,12 @@ API_BASE="https://api.iomete.com/api/v1"
 TOKEN="your_auth_token"
 
 # Full refresh (single call)
-RESPONSE=$(curl -s -X POST "$API_BASE/ingestions/$INGESTION_ID/full-refresh" \
+RESPONSE=$(curl -s -X POST "$API_BASE/ingestions/$INGESTION_ID/refresh" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "confirm": true,
+    "reprocess_all": true,
     "auto_run": true
   }')
 
@@ -1633,23 +1532,25 @@ API_BASE="https://api.iomete.com/api/v1"
 TOKEN="your_auth_token"
 
 # Preview first (dry run)
-curl -X POST "$API_BASE/ingestions/$INGESTION_ID/fresh-start" \
+curl -X POST "$API_BASE/ingestions/$INGESTION_ID/refresh" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "confirm": true,
+    "reprocess_all": false,
     "dry_run": true
   }' | jq '.'
 
 # Review output, then execute
-read -p "Proceed with fresh start? (y/n) " -n 1 -r
+read -p "Proceed with refresh? (y/n) " -n 1 -r
 echo
 if [[ $REPLY =~ ^[Yy]$ ]]; then
-  curl -X POST "$API_BASE/ingestions/$INGESTION_ID/fresh-start" \
+  curl -X POST "$API_BASE/ingestions/$INGESTION_ID/refresh" \
     -H "Authorization: Bearer $TOKEN" \
     -H "Content-Type: application/json" \
     -d '{
       "confirm": true,
+      "reprocess_all": false,
       "auto_run": true
     }'
 fi
@@ -1675,11 +1576,12 @@ echo "========================================="
 echo ""
 
 # Get cost estimate (dry run)
-ESTIMATE=$(curl -s -X POST "$API_BASE/ingestions/$INGESTION_ID/full-refresh" \
+ESTIMATE=$(curl -s -X POST "$API_BASE/ingestions/$INGESTION_ID/refresh" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "confirm": true,
+    "reprocess_all": true,
     "dry_run": true
   }')
 
@@ -1698,11 +1600,12 @@ echo
 
 if [ "$REPLY" = "yes" ]; then
   echo "Starting full refresh..."
-  curl -X POST "$API_BASE/ingestions/$INGESTION_ID/full-refresh" \
+  curl -X POST "$API_BASE/ingestions/$INGESTION_ID/refresh" \
     -H "Authorization: Bearer $TOKEN" \
     -H "Content-Type: application/json" \
     -d '{
       "confirm": true,
+      "reprocess_all": true,
       "auto_run": true
     }' | jq '.'
 else
@@ -1743,9 +1646,9 @@ dag = DAG(
 
 # Full refresh task
 full_refresh_task = SimpleHttpOperator(
-    task_id='full_refresh_users',
+    task_id='refresh_users',
     http_conn_id='iomete_api',
-    endpoint='/api/v1/ingestions/users-snapshot/full-refresh',
+    endpoint='/api/v1/ingestions/users-snapshot/refresh',
     method='POST',
     headers={
         'Authorization': 'Bearer {{ var.value.iomete_api_token }}',
@@ -1753,6 +1656,7 @@ full_refresh_task = SimpleHttpOperator(
     },
     data=json.dumps({
         'confirm': True,
+        'reprocess_all': True,
         'auto_run': True
     }),
     response_check=lambda response: response.json()['status'] == 'accepted',
@@ -1765,7 +1669,7 @@ def wait_for_completion(**context):
     import time
 
     ti = context['task_instance']
-    response = ti.xcom_pull(task_ids='full_refresh_users')
+    response = ti.xcom_pull(task_ids='refresh_users')
     run_id = json.loads(response)['run_id']
 
     api_base = "https://api.iomete.com/api/v1"
