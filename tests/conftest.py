@@ -74,6 +74,57 @@ def test_db() -> Generator[Session, None, None]:
 
 
 @pytest.fixture(scope="function")
+def test_db_postgres() -> Generator[Session, None, None]:
+    """
+    Create a fresh test database session using real PostgreSQL
+    Uses PostgreSQL from docker-compose for integration tests
+
+    Prerequisites:
+    - PostgreSQL running on localhost:5432 (docker-compose.test.yml)
+    - Database: autoloader_test
+    - User: test_user
+    - Password: test_password
+    """
+    # Get PostgreSQL connection from environment or use defaults
+    database_url = os.getenv(
+        "TEST_DATABASE_URL",
+        "postgresql://test_user:test_password@localhost:5432/autoloader_test"
+    )
+
+    # Create engine and session
+    engine = create_engine(database_url)
+    TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+    # Create all tables
+    Base.metadata.create_all(bind=engine)
+
+    # Create session
+    db = TestingSessionLocal()
+
+    try:
+        yield db
+    finally:
+        # Clean up test data
+        db.rollback()
+
+        # Delete test data from all tables
+        try:
+            # Delete in reverse order to respect foreign keys
+            from app.models.domain import ProcessedFile, Run, Ingestion
+
+            db.query(ProcessedFile).delete()
+            db.query(Run).delete()
+            db.query(Ingestion).delete()
+            db.commit()
+        except Exception as e:
+            print(f"Warning: Failed to clean up test data: {e}")
+            db.rollback()
+
+        db.close()
+        engine.dispose()
+
+
+@pytest.fixture(scope="function")
 def api_client(test_db: Session) -> Generator[TestClient, None, None]:
     """
     Create FastAPI test client with test database

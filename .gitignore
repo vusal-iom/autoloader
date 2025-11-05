@@ -72,3 +72,4 @@ alembic/versions/*.pyc
 .temp/
 temp/
 /.vscode/
+/docs/.obsidian/

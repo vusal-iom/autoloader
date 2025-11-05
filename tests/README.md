@@ -18,18 +18,19 @@ Comprehensive test suite for the IOMETE Autoloader project, including unit tests
 
 ```
 tests/
-├── __init__.py                           # Test package init
-├── README.md                             # This file
-├── conftest.py                           # Shared pytest fixtures
-├── fixtures/                             # Test utilities and helpers
+├── __init__.py                               # Test package init
+├── README.md                                 # This file
+├── conftest.py                               # Shared pytest fixtures
+├── fixtures/                                 # Test utilities and helpers
 │   ├── __init__.py
-│   └── data_generator.py                 # Test data generation utilities
-├── e2e/                                  # End-to-end tests
+│   └── data_generator.py                     # Test data generation utilities
+├── e2e/                                      # End-to-end tests
 │   ├── __init__.py
-│   └── test_basic_s3_json_ingestion.py   # E2E-01: Basic S3 JSON ingestion
-├── integration/                          # Integration tests (TODO)
+│   ├── test_basic_s3_json_ingestion.py       # E2E-01: Basic S3 JSON ingestion
+│   └── test_phase1_batch_processing_e2e.py   # E2E-02: Phase 1 batch processing
+├── integration/                              # Integration tests (TODO)
 │   └── __init__.py
-└── unit/                                 # Unit tests (TODO)
+└── unit/                                     # Unit tests (TODO)
     └── __init__.py
 ```
 
@@ -141,6 +142,21 @@ Load environment:
 export $(cat .env.test | xargs)
 ```
 
+### 4. Apply Database Migrations (For Phase 1 Tests)
+
+Phase 1 batch processing tests require the `processed_files` table:
+
+```bash
+# Use PostgreSQL for Phase 1 tests
+export DATABASE_URL="postgresql://test_user:test_password@localhost:5432/autoloader_test"
+
+# Run migrations
+alembic upgrade head
+
+# Verify table exists
+psql -h localhost -U test_user -d autoloader_test -c "\d processed_files"
+```
+
 ## Running Tests
 
 ### Run All Tests
@@ -171,7 +187,11 @@ pytest -m "not requires_spark"
 ### Run Specific Test File
 
 ```bash
+# Run API-based E2E tests
 pytest tests/e2e/test_basic_s3_json_ingestion.py
+
+# Run Phase 1 batch processing tests (requires PostgreSQL + Spark)
+pytest tests/e2e/test_phase1_batch_processing_e2e.py -v -s
 ```
 
 ### Run Specific Test Function
