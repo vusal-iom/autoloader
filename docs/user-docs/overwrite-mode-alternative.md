@@ -22,32 +22,43 @@ IOMETE Autoloader **does not support automatic overwrite mode**. This document e
 
 ### Decision Rationale
 
-After analysis, we decided **NOT to implement automatic overwrite mode** for the following reasons:
+We decided **NOT to implement automatic overwrite mode** for the following reasons:
 
-1. **Complexity vs. Value**
-   - Overwrite mode adds implementation complexity
-   - File state tracking becomes confusing (what does "processed" mean if we reprocess every time?)
-   - Audit trail management unclear
+1. **Safety: Prevents Dangerous Hidden Operations**
+   - A simple `write_mode: "overwrite"` flag could silently reprocess ALL files
+   - For large datasets (thousands of files, terabytes of data), this is a dangerous operation
+   - Hidden behavior could trigger massive costs without user awareness
+   - No accidental full reprocesses from configuration mistakes
 
-2. **Cost Concerns**
+2. **Explicit Control and Transparency**
+   - Manual approach forces users to consciously decide: "Do I want to reprocess ALL files?"
+   - Two explicit steps (drop table + clear processed files) make intentions clear
+   - Users see exactly what will happen before triggering the operation
+   - No surprises or unexpected behavior
+
+3. **Easy Manual Alternative**
+   - The manual workaround is straightforward and well-documented
+   - Two API calls achieve the same result with full visibility
+   - Can be easily automated via scripts for recurring snapshot refreshes
+   - Gives users flexibility to choose when and how to reprocess
+
+4. **Cost Transparency**
    - Re-processing ALL files on every run is expensive
    - For large datasets, this could be prohibitively costly
+   - Manual approach makes users aware of the cost implications
    - Incremental (append) mode is more cost-effective for 95% of use cases
 
-3. **Manual Control Is Better**
-   - Users have explicit control over when to reprocess
-   - Clear decision: "Do I want to reprocess existing files or just new ones?"
-   - No hidden behavior or surprising costs
-
-4. **Unclear Semantics**
+5. **Semantic Clarity**
    - Files in cloud storage are immutable
    - "Overwrite" is confusing: "I added new files but overwrite deleted old data?"
-   - Manual approach forces clarity
+   - Manual approach eliminates ambiguity
+   - Clear separation: file tracking vs. table data
 
-5. **Merge Mode Is Better for Most Use Cases**
+6. **Merge Mode Is Better for Most Use Cases**
    - Most "overwrite" needs are actually upserts
    - "Update existing records, insert new ones"
    - Merge mode (when implemented) handles this better
+   - True snapshot refreshes are rare and should be explicit
 
 ---
 
