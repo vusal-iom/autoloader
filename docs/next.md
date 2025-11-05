@@ -1,8 +1,10 @@
 - Review storing files in the db. we may need to move it to iceberg table
 - Performance implications of fetching all the files again and again. Instead moving processed files somewhere (an idea). Maybe force to notification system
 - Notifications system (sqs, kafka, rabit, http handler) as a plugin architecture
+- scaling the system
 - Sending alert/email
 - Monitoring and audit
+- performance test (we can mock spark and minio ops here to simulate cases)
 
 
 ----
