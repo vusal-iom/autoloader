@@ -167,6 +167,12 @@ Parallel: Spark Connect (Remote execution)
 - Async endpoints returning 202 ACCEPTED for long-running operations
 - Preview mode for testing configurations before activation
 
+## Documentation
+
+See documentation under `docs/batch-processing/`:
+- `batch-processing-implementation-guide.md` - Comprehensive implementation guide
+- `phase1-s3-implementation-guide.md` - Phase 1 S3 implementation details
+
 ## End to end (e2e) integration tests
 
 These tests are intended to be **end-to-end**.
