@@ -99,12 +99,9 @@ curl -X POST /api/v1/ingestions/123/run
 |----------|--------|---------|----------|
 | `/ingestions/{id}/refresh/full` | POST | Drop table + clear file history + run | Full refresh - reprocess ALL files from scratch |
 | `/ingestions/{id}/refresh/new-only` | POST | Drop table + keep file history + run | New-only refresh - process NEW files only |
-| `/ingestions/{id}/refresh` | POST | Generic refresh with mode parameter | (Optional) Programmatic use with `mode: "full"` or `"new_only"` |
-| `/ingestions/{id}/table` | DELETE | Drop table only | Manual cleanup, advanced workflows |
-| `/ingestions/{id}/processed-files` | DELETE | Clear file history only | (Existing) Backfill, reprocess |
 | `/ingestions/{id}/run` | POST | Trigger run only | (Existing) Normal execution |
 
-**Note:** The `/refresh/full` and `/refresh/new-only` endpoints provide clear, self-documenting paths for the two primary refresh modes.
+**Note:** The `/refresh/full` and `/refresh/new-only` endpoints provide clear, self-documenting paths for table refresh operations. These are the only refresh-related endpoints needed for most use cases.
 
 ---
 
@@ -128,7 +125,7 @@ curl -X POST /api/v1/ingestions/123/run
 POST /api/v1/ingestions/ing-abc123/refresh/full
 
 {
-  "confirm": true,         // REQUIRED: Must be true (safety mechanism)
+  "confirm": true,         // REQUIRED: Must be true (safety mechanism); 
   "auto_run": true,        // Optional: Trigger run immediately (default: true)
   "dry_run": false         // Optional: Preview without executing (default: false)
 }
@@ -449,145 +446,6 @@ class RefreshRequest(BaseModel):
 
 ---
 
-### 3. Drop Table
-
-**Endpoint:** `DELETE /api/v1/ingestions/{ingestion_id}/table`
-
-**Description:** Drops the target Iceberg table if it exists. Does NOT affect processed file history or trigger any runs. Granular operation for advanced workflows.
-
-**Use Cases:**
-- Manual cleanup before custom orchestration
-- Advanced workflows requiring fine-grained control
-- Delete table without triggering automatic reprocessing
-- Compose with other operations for custom logic
-
-**Request:**
-
-```json
-DELETE /api/v1/ingestions/ing-abc123/table
-
-{
-  "confirm": true  // REQUIRED: Must be true (safety mechanism)
-}
-```
-
-**Request Schema:**
-
-```python
-class DropTableRequest(BaseModel):
-    confirm: bool = Field(
-        ...,
-        description="Must be true to proceed. Safety confirmation required."
-    )
-
-    @validator('confirm')
-    def confirm_must_be_true(cls, v):
-        if not v:
-            raise ValueError("Must explicitly confirm with confirm=true")
-        return v
-```
-
-**Success Response (200 OK):**
-
-```json
-{
-  "status": "success",
-  "message": "Table dropped successfully",
-  "ingestion_id": "ing-abc123",
-  "timestamp": "2025-01-05T10:30:00Z",
-
-  "details": {
-    "table_name": "raw.sales_data",
-    "table_existed": true,
-    "table_size_gb": 450.2,
-    "row_count": 12450000
-  },
-
-  "notes": [
-    "Processed file history NOT affected (1,247 files still marked as processed)",
-    "No ingestion run triggered",
-    "Table will be recreated on next run"
-  ]
-}
-```
-
-**Response (Table Doesn't Exist):**
-
-```json
-{
-  "status": "success",
-  "message": "Table did not exist",
-  "ingestion_id": "ing-abc123",
-  "timestamp": "2025-01-05T10:30:00Z",
-
-  "details": {
-    "table_name": "raw.sales_data",
-    "table_existed": false
-  },
-
-  "notes": [
-    "Table does not exist (nothing to drop)",
-    "This is not an error - idempotent operation"
-  ]
-}
-```
-
-**Error Responses:**
-
-```json
-// 400 Bad Request - Missing confirmation
-{
-  "detail": "Confirmation required. Set confirm=true to proceed.",
-  "error_code": "CONFIRMATION_REQUIRED"
-}
-
-// 404 Not Found - Ingestion doesn't exist
-{
-  "detail": "Ingestion not found",
-  "error_code": "INGESTION_NOT_FOUND"
-}
-
-// 500 Internal Server Error - Spark error
-{
-  "detail": "Failed to drop table",
-  "error_code": "SPARK_ERROR",
-  "error_message": "Cluster connection failed",
-  "help": "Check cluster status and try again"
-}
-```
-
----
-
----
-
-### 4. Generic Refresh Endpoint (Optional)
-
-**Endpoint:** `POST /api/v1/ingestions/{ingestion_id}/refresh`
-
-**Description:** A generic refresh endpoint for programmatic use that accepts a `mode` parameter to specify the refresh type. This endpoint provides the same functionality as the specific `/refresh/full` and `/refresh/new-only` endpoints but with a mode parameter in the request body.
-
-**Request:**
-
-```json
-POST /api/v1/ingestions/ing-abc123/refresh
-
-{
-  "confirm": true,
-  "mode": "full",        // "full" or "new_only"
-  "auto_run": true,
-  "dry_run": false
-}
-```
-
-**Use Cases:**
-- Programmatic workflows that need to dynamically choose refresh mode
-- SDK implementations that prefer a single endpoint
-- Advanced users who want flexibility in parameter-based selection
-
-**Note:** For most use cases, the specific `/refresh/full` and `/refresh/new-only` endpoints are recommended for better clarity and self-documentation.
-
----
-
 ## Request/Response Schemas
 
 ### Refresh Request Schema
@@ -648,82 +506,6 @@ class RefreshRequest(BaseModel):
         }
 ```
 
-### Generic Refresh Request Schema (Optional)
-
-For the generic `/refresh` endpoint with mode parameter:
-
-```python
-from enum import Enum
-
-class RefreshMode(str, Enum):
-    FULL = "full"
-    NEW_ONLY = "new_only"
-
-class GenericRefreshRequest(BaseModel):
-    """Request schema for generic refresh endpoint with mode parameter."""
-
-    confirm: bool = Field(
-        ...,
-        description="Must be true to proceed. Safety confirmation required.",
-        example=True
-    )
-
-    mode: RefreshMode = Field(
-        ...,
-        description="Refresh mode: 'full' (reprocess all files) or 'new_only' (new files only)",
-        example="full"
-    )
-
-    auto_run: Optional[bool] = Field(
-        default=True,
-        description="Automatically trigger ingestion run after operation",
-        example=True
-    )
-
-    dry_run: Optional[bool] = Field(
-        default=False,
-        description="Preview operations without executing them",
-        example=False
-    )
-
-    @validator('confirm')
-    def confirm_must_be_true(cls, v):
-        if not v:
-            raise ValueError(
-                "Confirmation required. This is a destructive operation. "
-                "Set confirm=true to proceed."
-            )
-        return v
-
-    class Config:
-        schema_extra = {
-            "example": {
-                "confirm": True,
-                "mode": "full",
-                "auto_run": True,
-                "dry_run": False
-            }
-        }
-```
-
-### Drop Table Request Schema
-
-```python
-class DropTableRequest(BaseModel):
-    """Request schema for drop table operation."""
-
-    confirm: bool = Field(
-        ...,
-        description="Must be true to proceed. Safety confirmation required.",
-        example=True
-    )
-
-    @validator('confirm')
-    def confirm_must_be_true(cls, v):
-        if not v:
-            raise ValueError("Must explicitly confirm with confirm=true")
-        return v
-```
 
 ### Common Response Schema
 
@@ -1031,50 +813,6 @@ class RefreshService:
             notes=notes
         )
 
-    async def drop_table(
-        self,
-        ingestion_id: str,
-        confirm: bool,
-        db: Session = None
-    ) -> Dict[str, Any]:
-        """
-        Drop table only (no file clearing, no run trigger).
-
-        Args:
-            ingestion_id: Ingestion identifier
-            confirm: Safety confirmation (must be True)
-            db: Database session
-
-        Returns:
-            Operation result with details
-        """
-        if not confirm:
-            raise ValueError("Confirmation required. Set confirm=true to proceed.")
-
-        # Get ingestion
-        ingestion = self.ingestion_repo.get_by_id(db, ingestion_id)
-        if not ingestion:
-            raise ValueError(f"Ingestion not found: {ingestion_id}")
-
-        # Drop table
-        try:
-            table_info = await self.spark.drop_table(ingestion.destination.table)
-
-            return {
-                "status": "success",
-                "message": "Table dropped successfully",
-                "ingestion_id": ingestion_id,
-                "details": table_info,
-                "notes": [
-                    "Processed file history NOT affected",
-                    "No ingestion run triggered",
-                    "Table will be recreated on next run"
-                ]
-            }
-        except Exception as e:
-            logger.error(f"Failed to drop table: {e}")
-            raise
-
     # Helper methods
 
     async def _estimate_full_refresh_impact(
@@ -1184,8 +922,6 @@ from app.database import get_db
 from app.services.refresh_service import RefreshService
 from app.models.schemas import (
     RefreshRequest,
-    GenericRefreshRequest,
-    DropTableRequest,
     RefreshOperationResponse
 )
 from typing import Dict, Any
@@ -1294,91 +1030,6 @@ async def refresh_new_only(
             detail=f"New-only refresh operation failed: {str(e)}"
         )
 
-@router.post(
-    "/{ingestion_id}/refresh",
-    response_model=RefreshOperationResponse,
-    status_code=status.HTTP_202_ACCEPTED,
-    summary="Generic Refresh (Programmatic)",
-    description="""
-    Generic refresh endpoint that accepts a `mode` parameter.
-    For most use cases, prefer the specific `/refresh/full` or `/refresh/new-only` endpoints.
-
-    **Modes:**
-    - `mode: "full"` - Reprocess all files (same as `/refresh/full`)
-    - `mode: "new_only"` - Process only new files (same as `/refresh/new-only`)
-
-    **Safety:** Requires explicit confirmation. Supports dry-run mode.
-    """
-)
-async def refresh_generic(
-    ingestion_id: str,
-    request: GenericRefreshRequest,
-    db: Session = Depends(get_db),
-    refresh_service: RefreshService = Depends()
-) -> Dict[str, Any]:
-    """Generic refresh with mode parameter."""
-    try:
-        return await refresh_service.refresh(
-            ingestion_id=ingestion_id,
-            confirm=request.confirm,
-            mode=request.mode,
-            auto_run=request.auto_run,
-            dry_run=request.dry_run,
-            db=db
-        )
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Refresh operation failed: {str(e)}"
-        )
-
-@router.delete(
-    "/{ingestion_id}/table",
-    response_model=Dict[str, Any],
-    status_code=status.HTTP_200_OK,
-    summary="Drop Table",
-    description="""
-    Drops the target Iceberg table if it exists.
-
-    Does NOT affect processed file history or trigger any runs.
-    Granular operation for advanced workflows.
-
-    **Use Cases:**
-    - Manual cleanup before custom orchestration
-    - Advanced workflows requiring fine-grained control
-    - Delete table without triggering automatic reprocessing
-
-    **Safety:** Requires explicit confirmation.
-    """
-)
-async def drop_table(
-    ingestion_id: str,
-    request: DropTableRequest,
-    db: Session = Depends(get_db),
-    refresh_service: RefreshService = Depends()
-) -> Dict[str, Any]:
-    """Drop table only (no file clearing, no run trigger)."""
-    try:
-        return await refresh_service.drop_table(
-            ingestion_id=ingestion_id,
-            confirm=request.confirm,
-            db=db
-        )
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Drop table operation failed: {str(e)}"
-        )
 ```
 
 ---
@@ -1589,73 +1240,6 @@ Standardized error codes for client handling:
 | `CLUSTER_UNAVAILABLE` | 500 | Spark cluster down | Retry later or check cluster |
 | `INSUFFICIENT_PERMISSIONS` | 403 | No permission | Contact admin |
 | `PARTIAL_FAILURE` | 500 | Some ops failed | Follow recovery instructions |
-
----
-
-## Migration from Manual Workflows
-
-### Before (Manual Orchestration)
-
-```bash
-#!/bin/bash
-# Daily snapshot refresh - manual orchestration
-
-INGESTION_ID="users-snapshot"
-
-# Step 1: Drop table (via psql)
-psql -c "DROP TABLE IF EXISTS analytics.dim_users;"
-
-# Step 2: Clear processed files (via API)
-curl -X DELETE "https://api.iomete.com/api/v1/ingestions/$INGESTION_ID/processed-files" \
-  -H "Authorization: Bearer $TOKEN"
-
-# Step 3: Trigger run (via API)
-curl -X POST "https://api.iomete.com/api/v1/ingestions/$INGESTION_ID/run" \
-  -H "Authorization: Bearer $TOKEN"
-```
-
-**Problems:**
-- 3 separate operations
-- Mixing SQL and API calls
-- No error handling
-- No visibility into what happened
-- No safety checks
-
-### After (Convenience API)
-
-```bash
-#!/bin/bash
-# Daily snapshot refresh - single API call
-
-INGESTION_ID="users-snapshot"
-
-# Single API call with safety and visibility
-curl -X POST "https://api.iomete.com/api/v1/ingestions/$INGESTION_ID/refresh/full" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "confirm": true,
-    "auto_run": true
-  }'
-```
-
-**Benefits:**
-- Single API call
-- Atomic operation
-- Built-in error handling
-- Detailed response with cost estimates
-- Safety confirmations
-
-### Backward Compatibility
-
-Existing granular endpoints remain functional:
-
-```bash
-# Advanced users can still compose granular operations
-curl -X DELETE /api/v1/ingestions/123/table -d '{"confirm": true}'
-curl -X DELETE /api/v1/ingestions/123/processed-files
-curl -X POST /api/v1/ingestions/123/run
-```
 
 ---
 
