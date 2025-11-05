@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-IOMETE Autoloader is a zero-code, UI-driven data ingestion system that enables users to automatically load files from cloud storage (AWS S3, Azure Blob, GCS) into Apache Iceberg tables without writing Spark code. The project is currently in early implementation phase (MVP) with comprehensive documentation and architecture in place.
+IOMETE Autoloader is a zero-code, UI-driven (and API) data ingestion system that enables users to automatically load files from cloud storage (AWS S3, Azure Blob, GCS) into Apache Iceberg tables without writing Spark code.
 
 **Key Features:**
 - Scheduled batch ingestion (hourly, daily, custom cron) using Spark's availableNow trigger
@@ -267,41 +267,32 @@ Parallel: Spark Connect (Remote execution)
 - Async endpoints returning 202 ACCEPTED for long-running operations
 - Preview mode for testing configurations before activation
 
-## Documentation References
-
-- **README.md** - Getting started, architecture, API reference
-- **docs/ingestion-prd-v1.md** - Comprehensive PRD with requirements, user stories, success metrics
-- **docs/ingestion-prd-using-connect.md** - Spark Connect architecture addendum
-- **docs/autoloaderv1.md** - UI/UX mockups and design concepts
-- **docs/user-request.md** - Original user request
-
-## Current Development Phase
-
-**Status:** Early Implementation / MVP Phase 1
-
-**Immediate Priorities:**
-1. Complete ingestion_service.py implementation (create, update, delete, run)
-2. Implement scheduler integration for triggering scheduled runs
-3. Add authentication/authorization layer
-4. Implement Spark Connect executor and session pooling
-5. Add comprehensive error handling and retry logic
-
-**MVP Goals:**
-- Basic scheduled batch ingestion for AWS S3
-- Support JSON, CSV, Parquet formats
-- Auto schema inference
-- Scheduled mode (daily, hourly)
-- Basic monitoring with run history
-- Manual "Run Now" trigger
-- Cost estimation
-- Preview/test mode 
-
 ## End to end (e2e) integration tests
 
-These tests are meant to be **end-to-end**.
+Here’s an improved, professional, and clear version of your full prompt — suitable for documentation, developer guidelines, or an AI assistant instruction:
 
-* **No direct database manipulation** — all interactions must happen through the API.
-* It’s acceptable to **create test files in MinIO** before the test runs.
-* **All verification** should also be done **via API responses**, not by inspecting the database directly.
+---
 
-The goal is to validate the **complete end-to-end flow** through the system.
+### End-to-End Test Guidelines
+
+These tests are intended to be **end-to-end**.
+
+1. **API-only interactions**
+   * Do **not** manipulate the database directly.
+   * All operations and verifications must be performed **through the API**.
+
+2. **Test data setup**
+   * It’s acceptable to create **test files in MinIO** before running the test.
+   * However, all outcome validation must happen via **API responses**, not by inspecting the database.
+
+3. **Single test focus**
+   * Each time, work on **only one test case**.
+   * Avoid handling multiple test methods at once — it makes reviews harder for users.
+
+4. **Collaborative workflow**
+   * When writing a new test or making a significant change, **first show the proposed changes** to the user.
+   * **Discuss and confirm** that the approach is correct before applying the modifications.
+   * **Never make changes directly** without prior agreement.
+
+5. **Test execution**
+   * Use **pytest** to run and verify that each test actually works as expected.
