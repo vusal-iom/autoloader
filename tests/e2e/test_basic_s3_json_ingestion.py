@@ -17,10 +17,20 @@ All interactions are API-only (no direct database manipulation).
 """
 
 import pytest
-import time
-from typing import Dict, Any
+from typing import Dict
 from fastapi.testclient import TestClient
 from pyspark.sql import SparkSession
+
+from .helpers import (
+    E2ELogger,
+    create_standard_ingestion,
+    trigger_run,
+    wait_for_run_completion,
+    assert_run_metrics,
+    verify_table_data,
+    generate_unique_table_name,
+    get_table_identifier
+)
 
 
 @pytest.mark.e2e
@@ -53,268 +63,123 @@ class TestBasicS3JsonIngestion:
         5. Query Iceberg table to verify data
         6. Verify run history
         """
-        print("\n" + "="*80)
-        print("🧪 E2E TEST: Basic S3 JSON Ingestion - Happy Path")
-        print("="*80)
+        logger = E2ELogger()
+        logger.section("🧪 E2E TEST: Basic S3 JSON Ingestion - Happy Path")
 
-        # Generate unique table name to avoid test pollution
-        from datetime import datetime, timezone
-        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
-        table_name = f"e2e_test_table_{timestamp}"
+        # Generate unique table name
+        table_name = generate_unique_table_name("e2e_test_table")
 
-        # ========================================================================
+        # ====================================================================
         # STEP 1: Create Ingestion Configuration
-        # ========================================================================
-        print("\n📝 STEP 1: Creating ingestion configuration...")
+        # ====================================================================
+        logger.phase("📝 Creating ingestion configuration...")
 
-        ingestion_payload = {
-            "name": "E2E Test S3 JSON Ingestion",
-            "cluster_id": test_cluster_id,
-            "source": {
-                "type": "s3",
-                "path": f"s3://{test_bucket}/data/",
-                "file_pattern": "*.json",
-                "credentials": {
-                    "aws_access_key_id": minio_config["aws_access_key_id"],
-                    "aws_secret_access_key": minio_config["aws_secret_access_key"],
-                    "endpoint_url": minio_config["endpoint_url"]
-                }
-            },
-            "format": {
-                "type": "json",
-                "options": {
-                    "multiline": False
-                },
-                "schema": {
-                    "inference": "auto",
-                    "evolution_enabled": True
-                }
-            },
-            "destination": {
-                "catalog": "test_catalog",
-                "database": "test_db",
-                "table": table_name,
-                "write_mode": "append",
-                "partitioning": {
-                    "enabled": False,
-                    "columns": []
-                },
-                "optimization": {
-                    "z_ordering_enabled": False,
-                    "z_ordering_columns": []
-                }
-            },
-            "schedule": {
-                "frequency": None,  # Manual trigger only
-                "time": None,
-                "timezone": "UTC",
-                "cron_expression": None,
-                "backfill": {
-                    "enabled": False
-                }
-            },
-            "quality": {
-                "row_count_threshold": None,
-                "alerts_enabled": False,
-                "alert_recipients": []
-            }
-        }
+        ingestion = create_standard_ingestion(
+            api_client=api_client,
+            cluster_id=test_cluster_id,
+            test_bucket=test_bucket,
+            minio_config=minio_config,
+            table_name=table_name,
+            name="E2E Test S3 JSON Ingestion"
+        )
 
-        response = api_client.post("/api/v1/ingestions", json=ingestion_payload)
-
-        # Verify response
-        assert response.status_code == 201, f"Failed to create ingestion: {response.text}"
-
-        ingestion = response.json()
         ingestion_id = ingestion["id"]
 
-        print(f"  ✅ Created ingestion: {ingestion_id}")
-        print(f"     Name: {ingestion['name']}")
-        print(f"     Status: {ingestion['status']}")
-        print(f"     Source: {ingestion['source']['path']}")
-        print(f"     Destination: {ingestion['destination']['catalog']}.{ingestion['destination']['database']}.{ingestion['destination']['table']}")
+        logger.success(f"Created ingestion: {ingestion_id}")
+        logger.step(f"Source: {ingestion['source']['path']}")
+        logger.step(f"Destination: {get_table_identifier(ingestion)}")
 
-        # Assertions
         assert ingestion["id"] is not None
         assert ingestion["status"] == "draft"
         assert ingestion["name"] == "E2E Test S3 JSON Ingestion"
 
-        # ========================================================================
+        # ====================================================================
         # STEP 2: Trigger Manual Run
-        # ========================================================================
-        print("\n🚀 STEP 2: Triggering manual run...")
+        # ====================================================================
+        logger.phase("🚀 Triggering manual run...")
 
-        response = api_client.post(f"/api/v1/ingestions/{ingestion_id}/run")
+        run_id = trigger_run(api_client, ingestion_id)
 
-        # Verify response
-        assert response.status_code == 202, f"Failed to trigger run: {response.text}"
+        logger.success(f"Triggered run: {run_id}")
 
-        run_response = response.json()
-        run_id = run_response["run_id"]
-
-        print(f"  ✅ Triggered run: {run_id}")
-        print(f"     Status: {run_response['status']}")
-
-        # Assertions
-        assert run_id is not None
-        assert run_response["status"] in ["accepted", "running"]
-
-        # ========================================================================
+        # ====================================================================
         # STEP 3: Poll for Completion
-        # ========================================================================
-        print("\n⏳ STEP 3: Polling for completion...")
+        # ====================================================================
+        logger.phase("⏳ Polling for completion...")
 
-        max_wait_seconds = 180  # 3 minutes
-        poll_interval = 2  # seconds
-        start_time = time.time()
+        run = wait_for_run_completion(
+            api_client=api_client,
+            ingestion_id=ingestion_id,
+            run_id=run_id,
+            timeout=180,
+            logger=logger
+        )
 
-        run_status = None
-
-        while time.time() - start_time < max_wait_seconds:
-            # Get run status
-            response = api_client.get(f"/api/v1/ingestions/{ingestion_id}/runs/{run_id}")
-
-            assert response.status_code == 200, f"Failed to get run status: {response.text}"
-
-            run = response.json()
-            run_status = run["status"]
-
-            print(f"  ⏱️  {int(time.time() - start_time)}s - Status: {run_status}", end="")
-
-            if run_status in ["success", "completed"]:
-                print(" ✅")
-                break
-            elif run_status == "failed":
-                print(" ❌")
-                pytest.fail(f"Run failed: {run.get('errors', [])}")
-            else:
-                print()
-                time.sleep(poll_interval)
-
-        # Check if completed
-        if run_status not in ["success", "completed"]:
-            pytest.fail(f"Run did not complete within {max_wait_seconds}s. Last status: {run_status}")
-
-        print(f"\n  ✅ Run completed successfully in {int(time.time() - start_time)}s")
-
-        # ========================================================================
+        # ====================================================================
         # STEP 4: Verify Run Metrics
-        # ========================================================================
-        print("\n📊 STEP 4: Verifying run metrics...")
+        # ====================================================================
+        logger.phase("📊 Verifying run metrics...")
 
-        # Get final run details
-        response = api_client.get(f"/api/v1/ingestions/{ingestion_id}/runs/{run_id}")
-        assert response.status_code == 200
+        assert_run_metrics(
+            run=run,
+            expected_files=3,
+            expected_records=3000,
+            expected_errors=0,
+            logger=logger
+        )
 
-        run = response.json()
+        logger.success("All metrics verified")
 
-        print(f"  Run ID: {run['id']}")
-        print(f"  Status: {run['status']}")
-        print(f"  Started: {run['started_at']}")
-        print(f"  Ended: {run['ended_at']}")
-        print(f"  Duration: {run.get('metrics', {}).get('duration_seconds', 0)}s")
-        print(f"  Files Processed: {run.get('metrics', {}).get('files_processed', 0)}")
-        print(f"  Records Ingested: {run.get('metrics', {}).get('records_ingested', 0)}")
-        print(f"  Bytes Read: {run.get('metrics', {}).get('bytes_read', 0)}")
-        errors = run.get('errors') or []
-        print(f"  Errors: {len(errors)}")
-
-        # Assertions
-        assert run["status"] in ["success", "completed"]
-        assert run["started_at"] is not None
-        assert run["ended_at"] is not None
-
-        metrics = run.get("metrics", {})
-        assert metrics.get("files_processed", 0) == 3, "Expected 3 files processed"
-        assert metrics.get("records_ingested", 0) == 3000, "Expected 3000 records ingested"
-        errors = run.get('errors') or []
-        assert len(errors) == 0, "Expected no errors"
-
-        print("  ✅ All metrics verified")
-
-        # ========================================================================
+        # ====================================================================
         # STEP 5: Verify Data in Iceberg Table
-        # ========================================================================
-        print("\n🔍 STEP 5: Verifying data in Iceberg table...")
+        # ====================================================================
+        logger.phase("🔍 Verifying data in Iceberg table...")
 
-        table_identifier = f"{ingestion['destination']['catalog']}.{ingestion['destination']['database']}.{ingestion['destination']['table']}"
+        table_identifier = get_table_identifier(ingestion)
 
-        try:
-            # Query table
-            df = spark_session.table(table_identifier)
+        df = verify_table_data(
+            spark_session=spark_session,
+            table_identifier=table_identifier,
+            expected_count=3000,
+            expected_fields=["id", "timestamp", "user_id", "event_type", "value"],
+            check_duplicates=True,
+            logger=logger
+        )
 
-            # Get record count
-            record_count = df.count()
-            print(f"  Records in table: {record_count}")
+        # Verify data is queryable
+        sample_data = df.limit(5).collect()
+        assert len(sample_data) == 5, "Expected 5 sample records"
 
-            # Get schema
-            schema = df.schema
-            print(f"  Schema fields: {[field.name for field in schema.fields]}")
+        logger.success("Data verification passed")
 
-            # Get sample data
-            sample_data = df.limit(5).collect()
-            print(f"  Sample records: {len(sample_data)}")
-
-            # Check for duplicates
-            distinct_count = df.select("id").distinct().count()
-            print(f"  Distinct IDs: {distinct_count}")
-
-            # Assertions
-            assert record_count == 3000, f"Expected 3000 records, got {record_count}"
-
-            # Verify schema has expected columns
-            field_names = [field.name for field in schema.fields]
-            expected_fields = ["id", "timestamp", "user_id", "event_type", "value"]
-
-            for field in expected_fields:
-                assert field in field_names, f"Missing field: {field}"
-
-            # Verify no duplicates
-            assert distinct_count == record_count, f"Found duplicate IDs: {record_count - distinct_count} duplicates"
-
-            # Verify data is queryable
-            assert len(sample_data) == 5, "Expected 5 sample records"
-
-            print("  ✅ Data verification passed")
-
-        except Exception as e:
-            pytest.fail(f"Failed to verify Iceberg table: {e}")
-
-        # ========================================================================
+        # ====================================================================
         # STEP 6: Verify Run History
-        # ========================================================================
-        print("\n📜 STEP 6: Verifying run history...")
+        # ====================================================================
+        logger.phase("📜 Verifying run history...")
 
         response = api_client.get(f"/api/v1/ingestions/{ingestion_id}/runs")
         assert response.status_code == 200
 
         runs = response.json()
+        logger.step(f"Total runs: {len(runs)}")
 
-        print(f"  Total runs: {len(runs)}")
-
-        # Assertions
         assert len(runs) >= 1, "Expected at least 1 run in history"
 
         # Find our run
         our_run = next((r for r in runs if r["id"] == run_id), None)
         assert our_run is not None, f"Run {run_id} not found in history"
 
-        print(f"  ✅ Run found in history: {our_run['id']}")
-        print(f"     Status: {our_run['status']}")
-        print(f"     Files Processed: {our_run.get('metrics', {}).get('files_processed', 0)}")
+        logger.success(f"Run found in history: {our_run['id']}")
 
-        # ========================================================================
+        # ====================================================================
         # TEST COMPLETE
-        # ========================================================================
-        print("\n" + "="*80)
-        print("✅ E2E TEST PASSED: Basic S3 JSON Ingestion - Happy Path")
-        print("="*80)
+        # ====================================================================
+        logger.section("✅ E2E TEST PASSED: Basic S3 JSON Ingestion - Happy Path")
         print(f"\nSummary:")
         print(f"  - Ingestion ID: {ingestion_id}")
         print(f"  - Run ID: {run_id}")
         print(f"  - Files Processed: 3")
         print(f"  - Records Ingested: 3000")
-        print(f"  - Duration: {int(time.time() - start_time)}s")
         print(f"  - Table: {table_identifier}")
         print(f"  - Status: SUCCESS ✅")
         print("="*80 + "\n")
