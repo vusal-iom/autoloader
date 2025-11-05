@@ -50,7 +50,7 @@ from .helpers import (
 class TestIncrementalLoad:
     """E2E test for incremental file processing across multiple runs"""
 
-    def test_incremental_load_s3_json(
+    def test_incremental_processing(
         self,
         api_client: TestClient,
         minio_client,

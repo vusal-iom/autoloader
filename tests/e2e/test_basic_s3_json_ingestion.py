@@ -40,7 +40,7 @@ from .helpers import (
 class TestBasicS3JsonIngestion:
     """E2E test for basic S3 JSON ingestion - Happy Path"""
 
-    def test_happy_path_s3_json_ingestion(
+    def test_basic_ingestion(
         self,
         api_client: TestClient,
         minio_client,

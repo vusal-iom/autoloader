@@ -52,7 +52,7 @@ from .helpers import (
 class TestSchemaEvolution:
     """E2E test for schema evolution across multiple runs"""
 
-    def test_schema_evolution_s3_json(
+    def test_schema_evolution(
         self,
         api_client: TestClient,
         minio_client,
