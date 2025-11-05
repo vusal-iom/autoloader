@@ -115,31 +115,27 @@ class SparkService:
 
         try:
             client = pool.get_client(cluster_id, spark_url, spark_token)
+            spark = client.connect()
 
-            # Get table stats before dropping (for response metadata)
+            # Check if table exists before dropping (for response metadata)
             try:
-                stats_query = f"DESCRIBE EXTENDED {table_fqn}"
-                # For now, just return basic info
-                # In production, you might want to collect actual stats
-                table_info = {
-                    "table_name": table_fqn,
-                    "existed": True
-                }
+                spark.sql(f"DESCRIBE TABLE {table_fqn}")
+                table_existed = True
             except Exception:
                 # Table doesn't exist - that's fine
-                table_info = {
-                    "table_name": table_fqn,
-                    "existed": False
-                }
+                table_existed = False
 
             # Drop table (IF EXISTS for idempotency)
             drop_query = f"DROP TABLE IF EXISTS {table_fqn}"
-            client.execute_sql(drop_query)
+            spark.sql(drop_query)
 
             return {
                 "success": True,
                 "table_name": table_fqn,
-                "table_info": table_info
+                "table_info": {
+                    "table_name": table_fqn,
+                    "existed": table_existed
+                }
             }
         except Exception as e:
             raise Exception(f"Failed to drop table {table_fqn}: {str(e)}")

@@ -25,14 +25,29 @@ class SparkConnectClient:
         Returns:
             SparkSession instance
         """
-        # Note: Spark Connect doesn't support sparkContext, so we only check if session is None
+        # Check if session needs to be created or recreated
+        needs_new_session = False
+
         if self.session is None:
+            needs_new_session = True
+        else:
+            # Check if session is still active by trying a simple operation
+            try:
+                # Try to get version to test if session is active
+                _ = self.session.version
+            except Exception:
+                # Session is closed/invalid, need to recreate
+                needs_new_session = True
+                self.session = None
+
+        if needs_new_session:
             self.session = (
                 SparkSession.builder.remote(self.connect_url)
                 .config("spark.sql.session.timeZone", "UTC")
                 .config("spark.sql.adaptive.enabled", "true")
                 .getOrCreate()
             )
+
         return self.session
 
     def test_connection(self) -> Dict[str, Any]:
