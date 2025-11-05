@@ -190,12 +190,20 @@ class BatchFileProcessor:
 
     def _write_to_iceberg(self, df: DataFrame):
         """
-        Write DataFrame to Iceberg table.
+        Write DataFrame to Iceberg table with schema evolution support.
 
         Args:
             df: Spark DataFrame to write
         """
         table_identifier = f"{self.ingestion.destination_catalog}.{self.ingestion.destination_database}.{self.ingestion.destination_table}"
+        spark = self.spark.connect()
+
+        # Check if table exists and handle schema evolution
+        table_exists = self._table_exists(spark, table_identifier)
+
+        if table_exists and self.ingestion.schema_evolution_enabled:
+            # Perform explicit schema evolution if needed
+            self._evolve_schema_if_needed(spark, table_identifier, df)
 
         writer = df.write.format("iceberg")
 
@@ -205,11 +213,67 @@ class BatchFileProcessor:
         else:
             writer = writer.mode("append")  # Default
 
-        # Apply partitioning if configured
-        if self.ingestion.partitioning_enabled and self.ingestion.partitioning_columns:
+        # Apply partitioning if configured (only on table creation)
+        if not table_exists and self.ingestion.partitioning_enabled and self.ingestion.partitioning_columns:
             writer = writer.partitionBy(*self.ingestion.partitioning_columns)
 
         # For Iceberg, use saveAsTable to create table if it doesn't exist
         # This will create the table on first write and append on subsequent writes
         writer.saveAsTable(table_identifier)
         logger.debug(f"Wrote DataFrame to {table_identifier}")
+
+    def _table_exists(self, spark, table_identifier: str) -> bool:
+        """
+        Check if Iceberg table exists.
+
+        Args:
+            spark: SparkSession
+            table_identifier: Full table identifier (catalog.database.table)
+
+        Returns:
+            True if table exists, False otherwise
+        """
+        try:
+            # Use DESCRIBE TABLE to check existence
+            # This triggers actual table lookup unlike spark.table() which is lazy
+            spark.sql(f"DESCRIBE TABLE {table_identifier}")
+            return True
+        except Exception as e:
+            # Table doesn't exist or other error
+            logger.debug(f"Table {table_identifier} does not exist: {e}")
+            return False
+
+    def _evolve_schema_if_needed(self, spark, table_identifier: str, df: DataFrame):
+        """
+        Evolve table schema by adding new columns if they exist in DataFrame.
+
+        Args:
+            spark: SparkSession
+            table_identifier: Full table identifier
+            df: DataFrame with potentially new columns
+        """
+        try:
+            # Get current table schema
+            existing_table = spark.table(table_identifier)
+            existing_columns = {field.name.lower() for field in existing_table.schema.fields}
+
+            # Get DataFrame schema
+            new_columns = []
+            for field in df.schema.fields:
+                if field.name.lower() not in existing_columns:
+                    new_columns.append(field)
+
+            # Add new columns to table using ALTER TABLE
+            if new_columns:
+                logger.info(f"Schema evolution detected: Adding {len(new_columns)} new columns to {table_identifier}")
+                for field in new_columns:
+                    # Convert Spark data type to SQL type string
+                    col_type = field.dataType.simpleString()
+                    alter_sql = f"ALTER TABLE {table_identifier} ADD COLUMN {field.name} {col_type}"
+                    logger.debug(f"Executing: {alter_sql}")
+                    spark.sql(alter_sql)
+                    logger.info(f"Added column: {field.name} ({col_type})")
+
+        except Exception as e:
+            logger.error(f"Failed to evolve schema for {table_identifier}: {e}")
+            raise
