@@ -49,21 +49,58 @@ def minio_client(minio_config: Dict[str, str], ensure_services_ready):
     except Exception as e:
         raise RuntimeError(f"Failed to connect to MinIO: {e}")
 
-    # Create lakehouse bucket for Iceberg warehouse if it doesn't exist
-    try:
-        lakehouse_bucket = "test-lakehouse"
-        existing_buckets = client.list_buckets()
-        bucket_names = [b['Name'] for b in existing_buckets.get('Buckets', [])]
+    return client
 
-        if lakehouse_bucket not in bucket_names:
-            client.create_bucket(Bucket=lakehouse_bucket)
-            print(f"✅ Created lakehouse bucket: {lakehouse_bucket}")
+
+@pytest.fixture(scope="session")
+def lakehouse_bucket(minio_client) -> Generator[str, None, None]:
+    """
+    Create lakehouse bucket for Iceberg warehouse (once per session) and clean up after.
+
+    This bucket is used by Spark to store Iceberg table data.
+
+    Yields:
+        Bucket name ("test-lakehouse")
+    """
+    bucket_name = "test-lakehouse"
+
+    # Create bucket
+    try:
+        minio_client.create_bucket(Bucket=bucket_name)
+        print(f"✅ Created lakehouse bucket: {bucket_name}")
     except Exception as e:
         # If bucket already exists, that's fine
         if "BucketAlreadyOwnedByYou" not in str(e) and "BucketAlreadyExists" not in str(e):
             raise RuntimeError(f"Failed to create lakehouse bucket: {e}")
 
-    return client
+    yield bucket_name
+
+    # Cleanup: Delete all objects in bucket
+    try:
+        # List and delete all objects (may be paginated)
+        paginator = minio_client.get_paginator('list_objects_v2')
+        pages = paginator.paginate(Bucket=bucket_name)
+
+        objects_to_delete = []
+        for page in pages:
+            if 'Contents' in page:
+                objects_to_delete.extend([{'Key': obj['Key']} for obj in page['Contents']])
+
+        # Delete objects in batches (S3 limit is 1000 per request)
+        if objects_to_delete:
+            for i in range(0, len(objects_to_delete), 1000):
+                batch = objects_to_delete[i:i+1000]
+                minio_client.delete_objects(
+                    Bucket=bucket_name,
+                    Delete={'Objects': batch}
+                )
+
+        # Delete bucket
+        minio_client.delete_bucket(Bucket=bucket_name)
+        print(f"🧹 Cleaned up lakehouse bucket: {bucket_name} ({len(objects_to_delete)} objects deleted)")
+
+    except Exception as e:
+        print(f"⚠️  Warning: Failed to cleanup lakehouse bucket {bucket_name}: {e}")
 
 
 @pytest.fixture(scope="function")

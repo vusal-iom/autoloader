@@ -35,6 +35,7 @@ class TestBasicS3JsonIngestion:
         minio_client,
         minio_config: Dict[str, str],
         test_bucket: str,
+        lakehouse_bucket: str,
         sample_json_files: list,
         spark_session: SparkSession,
         test_tenant_id: str,
