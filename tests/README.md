@@ -305,18 +305,55 @@ From `CLAUDE.md`:
 
 ## Next Steps
 
-1. **Add more E2E tests:**
-   - Incremental load (only new files)
-   - Schema evolution detection
-   - Failed file handling
-   - CSV format ingestion
-   - Scheduled ingestion
+### Priority 1: E2E-02 - Incremental Load Test ⏭️ NEXT
 
-2. **Add unit tests:**
-   - Service layer tests
-   - Repository tests
-   - Model tests
+**Status:** Documented (Ready for Implementation)
+**Documentation:**
+- Plan: `docs/current/e2e-02-incremental-load-plan.md`
+- Specification: `docs/current/e2e-02-incremental-load-specification.md`
 
-3. **Add integration tests:**
-   - API endpoint tests (mocked Spark)
-   - Database integration tests
+**What it tests:**
+- Multiple ingestion runs on same configuration
+- Only NEW files processed in subsequent runs
+- No data duplication in Iceberg table
+- Accurate run metrics across runs
+- File state tracking persistence
+
+**Why it's next:**
+- Validates core autoloader value proposition (scheduled batch processing)
+- Tests critical file state tracking architecture
+- Natural progression from E2E-01 (single run → multiple runs)
+- High-impact early detection of checkpoint/tracking issues
+
+### Future E2E Tests
+
+2. **E2E-03: Error Scenarios**
+   - Invalid credentials
+   - Missing bucket
+   - Malformed files
+   - Empty bucket
+
+3. **E2E-04: Schema Evolution Detection**
+   - Files with additional fields
+   - Schema compatibility checking
+
+4. **E2E-05: CSV Format Ingestion**
+   - Validate format-agnostic design
+
+5. **E2E-06: Scheduled Ingestion**
+   - Cron-based execution
+
+6. **E2E-07: Multi-cloud Sources**
+   - Azure Blob, GCS
+
+### Unit Tests
+
+- Service layer tests
+- Repository tests
+- Model tests
+- Cost estimator logic
+
+### Integration Tests
+
+- API endpoint tests (mocked Spark)
+- Database integration tests
