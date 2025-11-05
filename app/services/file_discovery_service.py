@@ -198,6 +198,54 @@ class FileDiscoveryService:
             logger.error(f"Failed to initialize S3 client: {e}")
             raise
 
+    def discover_files_from_path(
+        self,
+        source_path: str,
+        pattern: Optional[str] = None,
+        since: Optional[datetime] = None,
+        max_files: Optional[int] = None
+    ) -> List[FileMetadata]:
+        """
+        Discover files from S3 path (convenience method that parses the path).
+
+        Args:
+            source_path: Full S3 path (e.g., "s3://bucket/prefix" or "s3a://bucket/prefix")
+            pattern: File pattern for filtering (e.g., "*.json")
+            since: Only return files modified after this date
+            max_files: Maximum number of files to return
+
+        Returns:
+            List of FileMetadata objects
+
+        Raises:
+            ValueError: If source_path format is invalid
+            ClientError: If S3 API call fails
+        """
+        # Parse S3 path (format: s3://bucket/prefix or s3a://bucket/prefix)
+        if source_path.startswith("s3://"):
+            source_path = source_path[5:]
+        elif source_path.startswith("s3a://"):
+            source_path = source_path[6:]
+        else:
+            raise ValueError(
+                f"Invalid S3 path format: {source_path}. "
+                f"Expected format: s3://bucket/prefix or s3a://bucket/prefix"
+            )
+
+        # Split into bucket and prefix
+        parts = source_path.split("/", 1)
+        bucket = parts[0]
+        prefix = parts[1] if len(parts) > 1 else ""
+
+        # Use existing list_files method
+        return self.list_files(
+            bucket=bucket,
+            prefix=prefix,
+            pattern=pattern,
+            since=since,
+            max_files=max_files
+        )
+
     def test_connection(self, bucket: str) -> bool:
         """
         Test S3 connection by checking if bucket is accessible.

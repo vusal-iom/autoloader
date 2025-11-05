@@ -519,20 +519,6 @@ class RefreshService:
                 f"Only S3 is supported. Azure Blob and GCS support coming in Phase 2."
             )
 
-        # Parse S3 path (format: s3://bucket/prefix or s3a://bucket/prefix)
-        source_path = ingestion.source_path
-        if source_path.startswith("s3://"):
-            source_path = source_path[5:]
-        elif source_path.startswith("s3a://"):
-            source_path = source_path[6:]
-        else:
-            raise ValueError(f"Invalid S3 path format: {ingestion.source_path}")
-
-        # Split into bucket and prefix
-        parts = source_path.split("/", 1)
-        bucket = parts[0]
-        prefix = parts[1] if len(parts) > 1 else ""
-
         # Initialize file discovery service
         discovery_service = FileDiscoveryService(
             source_type=source_type,
@@ -540,11 +526,10 @@ class RefreshService:
             region=ingestion.source_credentials.get("region") if ingestion.source_credentials else None
         )
 
-        # List files
+        # Use the convenience method that handles path parsing
         try:
-            files = discovery_service.list_files(
-                bucket=bucket,
-                prefix=prefix,
+            files = discovery_service.discover_files_from_path(
+                source_path=ingestion.source_path,
                 pattern=ingestion.source_file_pattern,
                 max_files=None  # Get all files for accurate estimation
             )

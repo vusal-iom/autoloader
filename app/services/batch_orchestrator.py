@@ -147,31 +147,12 @@ class BatchOrchestrator:
         Returns:
             List of FileMetadata objects
         """
-        # Parse bucket and prefix from source_path
-        # Example: s3://my-bucket/data/events/ → bucket=my-bucket, prefix=data/events/
-        # Also support s3a:// format used by Spark
-        source_path = ingestion.source_path
-
-        if source_path.startswith("s3://"):
-            parts = source_path.replace("s3://", "").split('/', 1)
-            bucket = parts[0]
-            prefix = parts[1] if len(parts) > 1 else ""
-        elif source_path.startswith("s3a://"):
-            parts = source_path.replace("s3a://", "").split('/', 1)
-            bucket = parts[0]
-            prefix = parts[1] if len(parts) > 1 else ""
-        else:
-            raise ValueError(f"Invalid source_path format: {source_path}")
-
-        # List files
-        files = discovery_service.list_files(
-            bucket=bucket,
-            prefix=prefix,
+        # Use the convenience method that handles path parsing
+        return discovery_service.discover_files_from_path(
+            source_path=ingestion.source_path,
             pattern=ingestion.source_file_pattern,  # e.g., "*.json"
             max_files=None  # No limit in Phase 1
         )
-
-        return files
 
     def _complete_run(self, run: Run, metrics: Dict):
         """

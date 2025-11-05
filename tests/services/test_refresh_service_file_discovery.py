@@ -226,7 +226,7 @@ class TestRefreshServiceFileDiscovery:
                 etag="etag1"
             )
         ]
-        mock_discovery_service.list_files.return_value = mock_files
+        mock_discovery_service.discover_files_from_path.return_value = mock_files
 
         # Patch FileDiscoveryService instantiation
         with patch('app.services.refresh_service.FileDiscoveryService', return_value=mock_discovery_service):
@@ -239,7 +239,7 @@ class TestRefreshServiceFileDiscovery:
         assert files[0].size == 1024 * 1024
 
         # Verify discovery service was called correctly
-        mock_discovery_service.list_files.assert_called_once()
+        mock_discovery_service.discover_files_from_path.assert_called_once()
 
     def test_file_date_range_in_impact(self, sample_ingestion, mock_file_metadata):
         """Test that impact includes file date ranges."""
