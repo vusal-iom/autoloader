@@ -97,36 +97,50 @@ curl -X POST /api/v1/ingestions/123/run
 
 | Endpoint | Method | Purpose | Use Case |
 |----------|--------|---------|----------|
-| `/ingestions/{id}/refresh` | POST | Drop table + optional clear files + run | Table refresh (all files or new only) |
+| `/ingestions/{id}/refresh/full` | POST | Drop table + clear file history + run | Full refresh - reprocess ALL files from scratch |
+| `/ingestions/{id}/refresh/new-only` | POST | Drop table + keep file history + run | New-only refresh - process NEW files only |
+| `/ingestions/{id}/refresh` | POST | Generic refresh with mode parameter | (Optional) Programmatic use with `mode: "full"` or `"new_only"` |
 | `/ingestions/{id}/table` | DELETE | Drop table only | Manual cleanup, advanced workflows |
 | `/ingestions/{id}/processed-files` | DELETE | Clear file history only | (Existing) Backfill, reprocess |
 | `/ingestions/{id}/run` | POST | Trigger run only | (Existing) Normal execution |
 
-**Note:** The `/refresh` endpoint supports two modes via `reprocess_all` parameter:
-- `reprocess_all: true` - Reprocess ALL files (clears history)
-- `reprocess_all: false` - Process NEW files only (keeps history)
+**Note:** The `/refresh/full` and `/refresh/new-only` endpoints provide clear, self-documenting paths for the two primary refresh modes.
 
 ---
 
 ## API Specification
 
-### 1. Refresh Table
+### 1. Full Refresh
 
-**Endpoint:** `POST /api/v1/ingestions/{ingestion_id}/refresh`
+**Endpoint:** `POST /api/v1/ingestions/{ingestion_id}/refresh/full`
 
-**Description:** Performs a table refresh by dropping the table and triggering a new ingestion run. Supports two modes:
-- **Reprocess All** (`reprocess_all: true`): Clears processed file history and reprocesses ALL source files from scratch
-- **Incremental** (`reprocess_all: false`): Keeps processed file history and only processes NEW files added since last run
+**Description:** Performs a full table refresh by dropping the table, clearing all processed file history, and reprocessing ALL source files from scratch.
 
 **Use Cases:**
-
-**When to use `reprocess_all: true` (Reprocess All Files):**
 - Data quality fixes requiring reprocessing of all historical files
 - Source files were corrected/updated retroactively
 - Complete snapshot refresh from all source files
 - Testing: replay entire ingestion from beginning
 
-**When to use `reprocess_all: false` (New Files Only):**
+**Request:**
+
+```json
+POST /api/v1/ingestions/ing-abc123/refresh/full
+
+{
+  "confirm": true,         // REQUIRED: Must be true (safety mechanism)
+  "auto_run": true,        // Optional: Trigger run immediately (default: true)
+  "dry_run": false         // Optional: Preview without executing (default: false)
+}
+```
+
+### 2. New-Only Refresh
+
+**Endpoint:** `POST /api/v1/ingestions/{ingestion_id}/refresh/new-only`
+
+**Description:** Performs a new-only table refresh by dropping the table while keeping processed file history intact, then processing only NEW files added since last run.
+
+**Use Cases:**
 - Recover from corrupted table without reprocessing historical data
 - Change table structure/schema (force recreation)
 - Fresh table for new files only (skip historical data)
@@ -135,28 +149,22 @@ curl -X POST /api/v1/ingestions/123/run
 **Request:**
 
 ```json
-POST /api/v1/ingestions/ing-abc123/refresh
+POST /api/v1/ingestions/ing-abc123/refresh/new-only
 
 {
   "confirm": true,         // REQUIRED: Must be true (safety mechanism)
-  "reprocess_all": false,  // Optional: true = all files, false = new only (default: false)
   "auto_run": true,        // Optional: Trigger run immediately (default: true)
   "dry_run": false         // Optional: Preview without executing (default: false)
 }
 ```
 
-**Request Schema:**
+**Request Schema (Common for Both Endpoints):**
 
 ```python
 class RefreshRequest(BaseModel):
     confirm: bool = Field(
         ...,
         description="Must be true to proceed. Safety confirmation required."
-    )
-    reprocess_all: bool = Field(
-        default=False,
-        description="If true, clears file history and reprocesses ALL files. "
-                    "If false, keeps history and processes only NEW files (cost-effective default)."
     )
     auto_run: bool = Field(
         default=True,
@@ -174,16 +182,16 @@ class RefreshRequest(BaseModel):
         return v
 ```
 
-**Success Response (202 Accepted) - Reprocess All (`reprocess_all: true`):**
+**Success Response (202 Accepted) - Full Refresh (`/refresh/full`):**
 
 ```json
 {
   "status": "accepted",
-  "message": "Table refresh completed successfully",
+  "message": "Full refresh completed successfully",
   "ingestion_id": "ing-abc123",
   "run_id": "run-xyz789",
   "timestamp": "2025-01-05T10:30:00Z",
-  "reprocess_all": true,
+  "mode": "full",
 
   "operations": [
     {
@@ -231,16 +239,16 @@ class RefreshRequest(BaseModel):
 }
 ```
 
-**Success Response (202 Accepted) - Incremental (`reprocess_all: false`):**
+**Success Response (202 Accepted) - New-Only Refresh (`/refresh/new-only`):**
 
 ```json
 {
   "status": "accepted",
-  "message": "Table refresh completed successfully",
+  "message": "New-only refresh completed successfully",
   "ingestion_id": "ing-abc123",
   "run_id": "run-xyz789",
   "timestamp": "2025-01-05T10:30:00Z",
-  "reprocess_all": false,
+  "mode": "new_only",
 
   "operations": [
     {
@@ -280,14 +288,14 @@ class RefreshRequest(BaseModel):
 }
 ```
 
-**Dry Run Response (200 OK) - Reprocess All (`reprocess_all: true`):**
+**Dry Run Response (200 OK) - Full Refresh (`/refresh/full`):**
 
 ```json
 {
   "status": "dry_run",
   "message": "Preview of operations (not executed)",
   "ingestion_id": "ing-abc123",
-  "reprocess_all": true,
+  "mode": "full",
 
   "would_perform": [
     {
@@ -328,20 +336,20 @@ class RefreshRequest(BaseModel):
   ],
 
   "next_steps": {
-    "to_proceed": "POST /api/v1/ingestions/ing-abc123/refresh with confirm=true, reprocess_all=true",
+    "to_proceed": "POST /api/v1/ingestions/ing-abc123/refresh/full with confirm=true",
     "to_cancel": "No action needed"
   }
 }
 ```
 
-**Dry Run Response (200 OK) - Incremental (`reprocess_all: false`):**
+**Dry Run Response (200 OK) - New-Only Refresh (`/refresh/new-only`):**
 
 ```json
 {
   "status": "dry_run",
   "message": "Preview of operations (not executed)",
   "ingestion_id": "ing-abc123",
-  "reprocess_all": false,
+  "mode": "new_only",
 
   "would_perform": [
     {
@@ -378,7 +386,7 @@ class RefreshRequest(BaseModel):
   ],
 
   "next_steps": {
-    "to_proceed": "POST /api/v1/ingestions/ing-abc123/refresh with confirm=true, reprocess_all=false",
+    "to_proceed": "POST /api/v1/ingestions/ing-abc123/refresh/new-only with confirm=true",
     "to_cancel": "No action needed"
   }
 }
@@ -441,7 +449,7 @@ class RefreshRequest(BaseModel):
 
 ---
 
-### 2. Drop Table
+### 3. Drop Table
 
 **Endpoint:** `DELETE /api/v1/ingestions/{ingestion_id}/table`
 
@@ -550,11 +558,41 @@ class DropTableRequest(BaseModel):
 
 ---
 
+---
+
+### 4. Generic Refresh Endpoint (Optional)
+
+**Endpoint:** `POST /api/v1/ingestions/{ingestion_id}/refresh`
+
+**Description:** A generic refresh endpoint for programmatic use that accepts a `mode` parameter to specify the refresh type. This endpoint provides the same functionality as the specific `/refresh/full` and `/refresh/new-only` endpoints but with a mode parameter in the request body.
+
+**Request:**
+
+```json
+POST /api/v1/ingestions/ing-abc123/refresh
+
+{
+  "confirm": true,
+  "mode": "full",        // "full" or "new_only"
+  "auto_run": true,
+  "dry_run": false
+}
+```
+
+**Use Cases:**
+- Programmatic workflows that need to dynamically choose refresh mode
+- SDK implementations that prefer a single endpoint
+- Advanced users who want flexibility in parameter-based selection
+
+**Note:** For most use cases, the specific `/refresh/full` and `/refresh/new-only` endpoints are recommended for better clarity and self-documentation.
+
+---
+
 ## Request/Response Schemas
 
 ### Refresh Request Schema
 
-The refresh endpoint uses the following request schema:
+The specific refresh endpoints (`/refresh/full` and `/refresh/new-only`) use the following request schema:
 
 ```python
 from pydantic import BaseModel, Field, validator
@@ -604,7 +642,64 @@ class RefreshRequest(BaseModel):
         schema_extra = {
             "example": {
                 "confirm": True,
-                "reprocess_all": False,
+                "auto_run": True,
+                "dry_run": False
+            }
+        }
+```
+
+### Generic Refresh Request Schema (Optional)
+
+For the generic `/refresh` endpoint with mode parameter:
+
+```python
+from enum import Enum
+
+class RefreshMode(str, Enum):
+    FULL = "full"
+    NEW_ONLY = "new_only"
+
+class GenericRefreshRequest(BaseModel):
+    """Request schema for generic refresh endpoint with mode parameter."""
+
+    confirm: bool = Field(
+        ...,
+        description="Must be true to proceed. Safety confirmation required.",
+        example=True
+    )
+
+    mode: RefreshMode = Field(
+        ...,
+        description="Refresh mode: 'full' (reprocess all files) or 'new_only' (new files only)",
+        example="full"
+    )
+
+    auto_run: Optional[bool] = Field(
+        default=True,
+        description="Automatically trigger ingestion run after operation",
+        example=True
+    )
+
+    dry_run: Optional[bool] = Field(
+        default=False,
+        description="Preview operations without executing them",
+        example=False
+    )
+
+    @validator('confirm')
+    def confirm_must_be_true(cls, v):
+        if not v:
+            raise ValueError(
+                "Confirmation required. This is a destructive operation. "
+                "Set confirm=true to proceed."
+            )
+        return v
+
+    class Config:
+        schema_extra = {
+            "example": {
+                "confirm": True,
+                "mode": "full",
                 "auto_run": True,
                 "dry_run": False
             }
@@ -788,7 +883,7 @@ class RefreshService:
         self,
         ingestion_id: str,
         confirm: bool,
-        reprocess_all: bool = False,
+        mode: str = "new_only",  # "full" or "new_only"
         auto_run: bool = True,
         dry_run: bool = False,
         db: Session = None
@@ -799,8 +894,8 @@ class RefreshService:
         Args:
             ingestion_id: Ingestion identifier
             confirm: Safety confirmation (must be True)
-            reprocess_all: If True, clears file history and reprocesses ALL files.
-                          If False, keeps history and processes only NEW files.
+            mode: Refresh mode - "full" (clear history, reprocess all files)
+                  or "new_only" (keep history, process new files only)
             auto_run: Trigger run after refresh
             dry_run: Preview without executing
             db: Database session
@@ -820,22 +915,25 @@ class RefreshService:
         if not ingestion:
             raise ValueError(f"Ingestion not found: {ingestion_id}")
 
-        # Get impact estimate (varies based on reprocess_all)
-        if reprocess_all:
+        # Determine if we're doing a full refresh
+        is_full_refresh = mode == "full"
+
+        # Get impact estimate (varies based on mode)
+        if is_full_refresh:
             impact = await self._estimate_full_refresh_impact(ingestion, db)
         else:
             impact = await self._estimate_incremental_refresh_impact(ingestion, db)
 
         # Build operations list based on mode
         operations_list = ["table_dropped"]
-        if reprocess_all:
+        if is_full_refresh:
             operations_list.append("processed_files_cleared")
         operations_list.append("run_triggered")
 
         # Dry run - return preview
         if dry_run:
             notes = []
-            if reprocess_all:
+            if is_full_refresh:
                 notes.append("⚠️ This will reprocess ALL files from scratch")
             else:
                 notes.append("ℹ️ Only NEW files will be processed")
@@ -845,7 +943,7 @@ class RefreshService:
                 ingestion_id=ingestion_id,
                 operations=operations_list,
                 impact=impact,
-                reprocess_all=reprocess_all,
+                mode=mode,
                 notes=notes
             )
 
@@ -869,8 +967,8 @@ class RefreshService:
             })
             return self._build_error_response(ingestion_id, operations, e)
 
-        # Step 2: Clear processed files (only if reprocess_all=true)
-        if reprocess_all:
+        # Step 2: Clear processed files (only if mode="full")
+        if is_full_refresh:
             try:
                 files_cleared = await self.file_state.clear_all_processed(
                     ingestion_id, db
@@ -916,7 +1014,7 @@ class RefreshService:
 
         # Build response notes
         notes = []
-        if reprocess_all:
+        if is_full_refresh:
             notes.append("Table dropped and will be recreated")
             notes.append("ALL files will be reprocessed")
         else:
@@ -929,7 +1027,7 @@ class RefreshService:
             run_id=run_id,
             operations=operations,
             impact=impact,
-            reprocess_all=reprocess_all,
+            mode=mode,
             notes=notes
         )
 
@@ -1086,6 +1184,7 @@ from app.database import get_db
 from app.services.refresh_service import RefreshService
 from app.models.schemas import (
     RefreshRequest,
+    GenericRefreshRequest,
     DropTableRequest,
     RefreshOperationResponse
 )
@@ -1094,45 +1193,135 @@ from typing import Dict, Any
 router = APIRouter(prefix="/api/v1/ingestions", tags=["Refresh Operations"])
 
 @router.post(
-    "/{ingestion_id}/refresh",
+    "/{ingestion_id}/refresh/full",
     response_model=RefreshOperationResponse,
     status_code=status.HTTP_202_ACCEPTED,
-    summary="Refresh Table",
+    summary="Full Refresh",
     description="""
-    Performs a table refresh by dropping the table and triggering a new ingestion run.
-    Supports two modes via the `reprocess_all` parameter:
+    Performs a full table refresh by dropping the table, clearing all processed
+    file history, and reprocessing ALL source files from scratch.
 
-    **Reprocess All (`reprocess_all: true`):**
+    **Operations:**
     1. Drops the target table
     2. Clears all processed file history
     3. Triggers a new ingestion run
-    - Reprocesses ALL source files from scratch
+    - Reprocesses ALL source files
 
-    **Incremental (`reprocess_all: false`, default):**
+    **Use Cases:**
+    - Data quality fixes requiring reprocessing of all historical files
+    - Source files were corrected/updated retroactively
+    - Complete snapshot refresh from all source files
+    - Testing: replay entire ingestion from beginning
+
+    **Safety:** Requires explicit confirmation. Supports dry-run mode.
+    """
+)
+async def refresh_full(
+    ingestion_id: str,
+    request: RefreshRequest,
+    db: Session = Depends(get_db),
+    refresh_service: RefreshService = Depends()
+) -> Dict[str, Any]:
+    """Full refresh: reprocess all files."""
+    try:
+        return await refresh_service.refresh(
+            ingestion_id=ingestion_id,
+            confirm=request.confirm,
+            mode="full",
+            auto_run=request.auto_run,
+            dry_run=request.dry_run,
+            db=db
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Full refresh operation failed: {str(e)}"
+        )
+
+@router.post(
+    "/{ingestion_id}/refresh/new-only",
+    response_model=RefreshOperationResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="New-Only Refresh",
+    description="""
+    Performs a new-only table refresh by dropping the table while keeping
+    processed file history intact, then processing only NEW files.
+
+    **Operations:**
     1. Drops the target table
     2. Keeps processed file history intact
     3. Triggers a new ingestion run
     - Only processes NEW files added since last run
 
     **Use Cases:**
-    - `reprocess_all: true` - Data quality fixes, source file corrections, complete snapshots
-    - `reprocess_all: false` - Recover from corrupted table, schema changes, cost-effective refresh
+    - Recover from corrupted table without reprocessing historical data
+    - Change table structure/schema (force recreation)
+    - Fresh table for new files only (skip historical data)
+    - Testing: clean slate without expensive reprocessing
 
     **Safety:** Requires explicit confirmation. Supports dry-run mode.
     """
 )
-async def refresh(
+async def refresh_new_only(
     ingestion_id: str,
     request: RefreshRequest,
     db: Session = Depends(get_db),
     refresh_service: RefreshService = Depends()
 ) -> Dict[str, Any]:
-    """Refresh table with optional file history clearing."""
+    """New-only refresh: process only new files."""
     try:
         return await refresh_service.refresh(
             ingestion_id=ingestion_id,
             confirm=request.confirm,
-            reprocess_all=request.reprocess_all,
+            mode="new_only",
+            auto_run=request.auto_run,
+            dry_run=request.dry_run,
+            db=db
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"New-only refresh operation failed: {str(e)}"
+        )
+
+@router.post(
+    "/{ingestion_id}/refresh",
+    response_model=RefreshOperationResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Generic Refresh (Programmatic)",
+    description="""
+    Generic refresh endpoint that accepts a `mode` parameter.
+    For most use cases, prefer the specific `/refresh/full` or `/refresh/new-only` endpoints.
+
+    **Modes:**
+    - `mode: "full"` - Reprocess all files (same as `/refresh/full`)
+    - `mode: "new_only"` - Process only new files (same as `/refresh/new-only`)
+
+    **Safety:** Requires explicit confirmation. Supports dry-run mode.
+    """
+)
+async def refresh_generic(
+    ingestion_id: str,
+    request: GenericRefreshRequest,
+    db: Session = Depends(get_db),
+    refresh_service: RefreshService = Depends()
+) -> Dict[str, Any]:
+    """Generic refresh with mode parameter."""
+    try:
+        return await refresh_service.refresh(
+            ingestion_id=ingestion_id,
+            confirm=request.confirm,
+            mode=request.mode,
             auto_run=request.auto_run,
             dry_run=request.dry_run,
             db=db
@@ -1441,12 +1630,11 @@ curl -X POST "https://api.iomete.com/api/v1/ingestions/$INGESTION_ID/run" \
 INGESTION_ID="users-snapshot"
 
 # Single API call with safety and visibility
-curl -X POST "https://api.iomete.com/api/v1/ingestions/$INGESTION_ID/refresh" \
+curl -X POST "https://api.iomete.com/api/v1/ingestions/$INGESTION_ID/refresh/full" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "confirm": true,
-    "reprocess_all": true,
     "auto_run": true
   }'
 ```
@@ -1488,12 +1676,11 @@ API_BASE="https://api.iomete.com/api/v1"
 TOKEN="your_auth_token"
 
 # Full refresh (single call)
-RESPONSE=$(curl -s -X POST "$API_BASE/ingestions/$INGESTION_ID/refresh" \
+RESPONSE=$(curl -s -X POST "$API_BASE/ingestions/$INGESTION_ID/refresh/full" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "confirm": true,
-    "reprocess_all": true,
     "auto_run": true
   }')
 
@@ -1532,12 +1719,11 @@ API_BASE="https://api.iomete.com/api/v1"
 TOKEN="your_auth_token"
 
 # Preview first (dry run)
-curl -X POST "$API_BASE/ingestions/$INGESTION_ID/refresh" \
+curl -X POST "$API_BASE/ingestions/$INGESTION_ID/refresh/new-only" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "confirm": true,
-    "reprocess_all": false,
     "dry_run": true
   }' | jq '.'
 
@@ -1545,12 +1731,11 @@ curl -X POST "$API_BASE/ingestions/$INGESTION_ID/refresh" \
 read -p "Proceed with refresh? (y/n) " -n 1 -r
 echo
 if [[ $REPLY =~ ^[Yy]$ ]]; then
-  curl -X POST "$API_BASE/ingestions/$INGESTION_ID/refresh" \
+  curl -X POST "$API_BASE/ingestions/$INGESTION_ID/refresh/new-only" \
     -H "Authorization: Bearer $TOKEN" \
     -H "Content-Type: application/json" \
     -d '{
       "confirm": true,
-      "reprocess_all": false,
       "auto_run": true
     }'
 fi
@@ -1576,12 +1761,11 @@ echo "========================================="
 echo ""
 
 # Get cost estimate (dry run)
-ESTIMATE=$(curl -s -X POST "$API_BASE/ingestions/$INGESTION_ID/refresh" \
+ESTIMATE=$(curl -s -X POST "$API_BASE/ingestions/$INGESTION_ID/refresh/full" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "confirm": true,
-    "reprocess_all": true,
     "dry_run": true
   }')
 
@@ -1600,12 +1784,11 @@ echo
 
 if [ "$REPLY" = "yes" ]; then
   echo "Starting full refresh..."
-  curl -X POST "$API_BASE/ingestions/$INGESTION_ID/refresh" \
+  curl -X POST "$API_BASE/ingestions/$INGESTION_ID/refresh/full" \
     -H "Authorization: Bearer $TOKEN" \
     -H "Content-Type: application/json" \
     -d '{
       "confirm": true,
-      "reprocess_all": true,
       "auto_run": true
     }' | jq '.'
 else
@@ -1648,7 +1831,7 @@ dag = DAG(
 full_refresh_task = SimpleHttpOperator(
     task_id='refresh_users',
     http_conn_id='iomete_api',
-    endpoint='/api/v1/ingestions/users-snapshot/refresh',
+    endpoint='/api/v1/ingestions/users-snapshot/refresh/full',
     method='POST',
     headers={
         'Authorization': 'Bearer {{ var.value.iomete_api_token }}',
@@ -1656,7 +1839,6 @@ full_refresh_task = SimpleHttpOperator(
     },
     data=json.dumps({
         'confirm': True,
-        'reprocess_all': True,
         'auto_run': True
     }),
     response_check=lambda response: response.json()['status'] == 'accepted',
@@ -1831,7 +2013,7 @@ def test_full_refresh_endpoint(client: TestClient, auth_headers, db_session):
 
     # Call endpoint
     response = client.post(
-        f"/api/v1/ingestions/{ingestion.id}/full-refresh",
+        f"/api/v1/ingestions/{ingestion.id}/refresh/full",
         headers=auth_headers,
         json={
             "confirm": True,
@@ -1849,7 +2031,7 @@ def test_full_refresh_endpoint(client: TestClient, auth_headers, db_session):
 def test_full_refresh_without_confirmation(client: TestClient, auth_headers):
     """Test that confirmation is required."""
     response = client.post(
-        f"/api/v1/ingestions/ing-123/full-refresh",
+        f"/api/v1/ingestions/ing-123/refresh/full",
         headers=auth_headers,
         json={
             "confirm": False
@@ -1864,7 +2046,7 @@ def test_dry_run_mode(client: TestClient, auth_headers, db_session):
     ingestion = create_test_ingestion(db_session)
 
     response = client.post(
-        f"/api/v1/ingestions/{ingestion.id}/full-refresh",
+        f"/api/v1/ingestions/{ingestion.id}/refresh/full",
         headers=auth_headers,
         json={
             "confirm": True,
@@ -1887,7 +2069,7 @@ def test_run_conflict_detection(client: TestClient, auth_headers, db_session):
 
     # Try to refresh
     response = client.post(
-        f"/api/v1/ingestions/{ingestion.id}/full-refresh",
+        f"/api/v1/ingestions/{ingestion.id}/refresh/full",
         headers=auth_headers,
         json={"confirm": True}
     )
@@ -1912,7 +2094,7 @@ def test_full_refresh_workflow(client, auth_headers, spark_client, db_session):
 
     # Execute full refresh
     response = client.post(
-        f"/api/v1/ingestions/{ingestion.id}/full-refresh",
+        f"/api/v1/ingestions/{ingestion.id}/refresh/full",
         headers=auth_headers,
         json={"confirm": True, "auto_run": True}
     )
@@ -2115,7 +2297,7 @@ if not ENABLE_REFRESH_OPERATIONS_API:
    POST /api/v1/batch-refresh
    {
      "ingestion_ids": ["ing-1", "ing-2", "ing-3"],
-     "operation": "full_refresh",
+     "mode": "full",
      "confirm": true
    }
    ```
@@ -2125,7 +2307,7 @@ if not ENABLE_REFRESH_OPERATIONS_API:
    PUT /api/v1/ingestions/{id}
    {
      "refresh_schedule": {
-       "operation": "full_refresh",
+       "mode": "full",
        "cron": "0 2 * * *"
      }
    }
@@ -2136,7 +2318,7 @@ if not ENABLE_REFRESH_OPERATIONS_API:
    POST /api/v1/ingestions/{id}/refresh-if
    {
      "condition": "file_count > 100",
-     "operation": "full_refresh"
+     "mode": "full"
    }
    ```
 
@@ -2146,7 +2328,7 @@ if not ENABLE_REFRESH_OPERATIONS_API:
    {
      "start_date": "2025-01-01",
      "end_date": "2025-01-31",
-     "operation": "reprocess"
+     "mode": "full"
    }
    ```
 
