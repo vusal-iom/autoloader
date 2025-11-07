@@ -14,6 +14,7 @@ from datetime import datetime
 
 from prefect import get_client
 from prefect.client.schemas.schedules import CronSchedule
+from prefect.client.schemas.actions import DeploymentScheduleCreate
 from prefect.client.schemas.filters import DeploymentFilter, FlowRunFilter
 from prefect.client.schemas.sorting import FlowRunSort
 from prefect.exceptions import ObjectNotFound
@@ -73,33 +74,49 @@ class PrefectService:
 
         try:
             async with get_client() as client:
+                # Import flow to register it
+                from app.prefect.flows.run_ingestion import run_ingestion_flow
+
                 # Build schedule from ingestion configuration
                 schedule = self._build_schedule(ingestion)
 
                 # Determine work queue
                 work_queue_name = self._get_work_queue(ingestion)
 
-                # Import flow to ensure it's registered
-                from app.prefect.flows.run_ingestion import run_ingestion_flow
+                # Get or create flow
+                flow_id = await self._get_or_create_flow_id(client)
 
-                # Create deployment
-                deployment = await client.create_deployment(
-                    flow_id=await self._get_or_create_flow_id(client),
+                # Build schedules list for Prefect 3.x
+                schedules = []
+                if schedule:
+                    schedules.append(
+                        DeploymentScheduleCreate(
+                            schedule=schedule,
+                            active=True
+                        )
+                    )
+
+                # Create deployment using client API
+                deployment_id = await client.create_deployment(
                     name=f"ingestion-{ingestion.id}",
-                    version=None,
-                    schedule=schedule,
-                    parameters={"ingestion_id": str(ingestion.id), "trigger": "scheduled"},
+                    flow_id=flow_id,
+                    work_pool_name="default-work-pool",
                     work_queue_name=work_queue_name,
+                    schedules=schedules,
+                    parameters={"ingestion_id": str(ingestion.id), "trigger": "scheduled"},
                     tags=[
                         "autoloader",
                         f"tenant-{ingestion.tenant_id}",
                         f"source-{ingestion.source_type}",
                     ],
                     description=f"Autoloader ingestion: {ingestion.name}",
-                    is_schedule_active=True,
+                    paused=False,
+                    # For Prefect 3.x, we set entrypoint to reference the flow function
+                    entrypoint="app/prefect/flows/run_ingestion.py:run_ingestion_flow",
                 )
 
-                deployment_id = str(deployment.id)
+                deployment_id = str(deployment_id)
+
                 logger.info(
                     f"✅ Created Prefect deployment {deployment_id} for ingestion {ingestion.id}"
                 )
@@ -133,18 +150,26 @@ class PrefectService:
 
         try:
             async with get_client() as client:
+                from prefect.client.schemas.actions import DeploymentScheduleUpdate
+
                 # Build schedule
+                schedules = []
                 if schedule_frequency:
                     cron_expr = self._build_cron_expression(
                         schedule_frequency, schedule_time, schedule_cron
                     )
-                    schedule = CronSchedule(cron=cron_expr, timezone=timezone) if cron_expr else None
-                else:
-                    schedule = None
+                    if cron_expr:
+                        schedule = CronSchedule(cron=cron_expr, timezone=timezone)
+                        schedules.append(
+                            DeploymentScheduleUpdate(
+                                schedule=schedule,
+                                active=True
+                            )
+                        )
 
                 await client.update_deployment(
                     deployment_id=UUID(deployment_id),
-                    schedule=schedule,
+                    schedules=schedules,
                 )
 
                 logger.info(f"✅ Updated schedule for deployment {deployment_id}")
@@ -449,26 +474,34 @@ class PrefectService:
         if self.ingestion_flow_id:
             return UUID(self.ingestion_flow_id)
 
-        # Import and register flow
+        # Import flow
         from app.prefect.flows.run_ingestion import run_ingestion_flow
 
-        # Try to find existing flow
-        flows = await client.read_flows()
-        flow = next((f for f in flows if f.name == "run_ingestion"), None)
+        # Try to find existing flow by name
+        try:
+            flows = await client.read_flows()
+            flow = next((f for f in flows if f.name == run_ingestion_flow.name), None)
 
-        if flow:
-            self.ingestion_flow_id = str(flow.id)
-            logger.info(f"Found existing flow: {self.ingestion_flow_id}")
-        else:
-            # Create flow entry
-            # Note: In Prefect 2.14+, flows are auto-registered on first deployment
-            # We'll let the deployment creation trigger flow registration
-            logger.info("Flow will be registered on first deployment")
-            # Return a placeholder - Prefect will handle flow creation
-            # For now, we'll create deployments without pre-registering flows
-            pass
+            if flow:
+                self.ingestion_flow_id = str(flow.id)
+                logger.info(f"Found existing flow: {self.ingestion_flow_id}")
+                return UUID(self.ingestion_flow_id)
+        except Exception as e:
+            logger.warning(f"Error reading flows: {e}")
 
-        return UUID(self.ingestion_flow_id) if self.ingestion_flow_id else None
+        # Create flow if it doesn't exist
+        from prefect.client.schemas.actions import FlowCreate
+
+        try:
+            flow_data = FlowCreate(name=run_ingestion_flow.name)
+            created_flow_id = await client.create_flow(flow_data)
+            # create_flow returns UUID directly in Prefect 3.x
+            self.ingestion_flow_id = str(created_flow_id)
+            logger.info(f"Created new flow: {self.ingestion_flow_id}")
+            return created_flow_id if isinstance(created_flow_id, UUID) else UUID(self.ingestion_flow_id)
+        except Exception as e:
+            logger.error(f"Failed to create flow: {e}")
+            raise
 
 
 # Global singleton instance

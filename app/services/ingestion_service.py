@@ -112,6 +112,7 @@ class IngestionService:
                 # Store deployment ID
                 ingestion.prefect_deployment_id = deployment_id
                 self.db.commit()
+                self.db.refresh(ingestion)  # Refresh to ensure latest state
 
                 logger.info(f"✅ Created Prefect deployment for ingestion {ingestion_id}")
             except Exception as e:

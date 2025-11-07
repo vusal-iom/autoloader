@@ -79,10 +79,52 @@ services:
     networks:
       - test_network
 
+  prefect-db:
+    image: postgres:15
+    container_name: autoloader-test-prefect-db
+    environment:
+      POSTGRES_DB: prefect
+      POSTGRES_USER: prefect_user
+      POSTGRES_PASSWORD: prefect_password
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U prefect_user -d prefect"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    volumes:
+      - prefect_db_data:/var/lib/postgresql/data
+    networks:
+      - test_network
+
+  prefect-server:
+    image: prefecthq/prefect:3.5.0-python3.11
+    container_name: autoloader-test-prefect
+    ports:
+      - "4200:4200"  # Prefect UI
+    environment:
+      - PREFECT_SERVER_API_HOST=0.0.0.0
+      - PREFECT_API_DATABASE_CONNECTION_URL=postgresql+asyncpg://prefect_user:prefect_password@prefect-db:5432/prefect
+      - PREFECT_API_URL=http://localhost:4200/api
+    command: prefect server start --host 0.0.0.0
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4200/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    depends_on:
+      prefect-db:
+        condition: service_healthy
+    networks:
+      - test_network
+
 volumes:
   minio_test_data:
     driver: local
   postgres_test_data:
+    driver: local
+  prefect_db_data:
     driver: local
   spark_warehouse:
     driver: local

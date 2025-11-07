@@ -170,6 +170,8 @@ class IngestionResponse(BaseModel):
 
     metadata: IngestionMetadata
 
+    prefect_deployment_id: Optional[str] = None  # Prefect deployment UUID
+
     created_at: datetime
     updated_at: datetime
     created_by: str
