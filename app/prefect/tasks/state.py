@@ -11,7 +11,7 @@ from app.services.file_state_service import FileStateService
 @task(
     name="check_file_state",
     retries=1,
-    retry_delay_seconds=30,
+    retry_delay_seconds=5,
     tags=["state"]
 )
 def check_file_state_task(ingestion_id: str) -> List[str]:

@@ -6,7 +6,7 @@ from typing import List, Set, Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
 from app.models.domain import ProcessedFile, ProcessedFileStatus
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import logging
 
 logger = logging.getLogger(__name__)
@@ -111,7 +111,7 @@ class ProcessedFileRepository:
         Returns:
             List of ProcessedFile records stuck in PROCESSING
         """
-        threshold = datetime.utcnow() - timedelta(hours=stale_threshold_hours)
+        threshold = datetime.now(timezone.utc) - timedelta(hours=stale_threshold_hours)
 
         return self.db.query(ProcessedFile).filter(
             ProcessedFile.ingestion_id == ingestion_id,
@@ -161,7 +161,7 @@ class ProcessedFileRepository:
                     file_record.status = ProcessedFileStatus.PROCESSING.value
                     file_record.retry_count += 1
                     file_record.run_id = run_id
-                    file_record.processing_started_at = datetime.utcnow()
+                    file_record.processing_started_at = datetime.now(timezone.utc)
                     self._update_file_metadata(file_record, file_metadata)
                 else:
                     # No changes, skip
@@ -173,7 +173,7 @@ class ProcessedFileRepository:
                 file_record.status = ProcessedFileStatus.PROCESSING.value
                 file_record.retry_count += 1
                 file_record.run_id = run_id
-                file_record.processing_started_at = datetime.utcnow()
+                file_record.processing_started_at = datetime.now(timezone.utc)
                 if file_metadata:
                     self._update_file_metadata(file_record, file_metadata)
         else:
@@ -184,8 +184,8 @@ class ProcessedFileRepository:
                 run_id=run_id,
                 file_path=file_path,
                 status=ProcessedFileStatus.PROCESSING.value,
-                discovered_at=datetime.utcnow(),
-                processing_started_at=datetime.utcnow(),
+                discovered_at=datetime.now(timezone.utc),
+                processing_started_at=datetime.now(timezone.utc),
                 retry_count=0
             )
             if file_metadata:
@@ -212,7 +212,7 @@ class ProcessedFileRepository:
             bytes_read: Bytes read from file
         """
         file_record.status = ProcessedFileStatus.SUCCESS.value
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         file_record.processed_at = now
         file_record.records_ingested = records_ingested
         file_record.bytes_read = bytes_read
@@ -238,7 +238,7 @@ class ProcessedFileRepository:
         file_record.status = ProcessedFileStatus.FAILED.value
         file_record.error_message = str(error)
         file_record.error_type = type(error).__name__
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         file_record.processed_at = now
 
         if file_record.processing_started_at:
@@ -258,7 +258,7 @@ class ProcessedFileRepository:
         """
         file_record.status = ProcessedFileStatus.SKIPPED.value
         file_record.error_message = reason
-        file_record.processed_at = datetime.utcnow()
+        file_record.processed_at = datetime.now(timezone.utc)
 
         self.db.commit()
         logger.warning(f"Marked file SKIPPED: {file_record.file_path} - {reason}")

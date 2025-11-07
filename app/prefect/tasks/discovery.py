@@ -13,7 +13,7 @@ from app.services.file_discovery_service import FileDiscoveryService
 @task(
     name="discover_files",
     retries=2,
-    retry_delay_seconds=60,
+    retry_delay_seconds=5,
     tags=["discovery"]
 )
 def discover_files_task(ingestion_id: str) -> List[Dict]:

@@ -15,7 +15,7 @@ from app.config import get_spark_connect_credentials
 @task(
     name="process_files",
     retries=2,
-    retry_delay_seconds=120,
+    retry_delay_seconds=5,
     timeout_seconds=3600,
     tags=["processing"]
 )
