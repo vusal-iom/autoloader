@@ -95,6 +95,10 @@ class Ingestion(Base):
     schema_version = Column(Integer, default=1)
     estimated_monthly_cost = Column(Float, nullable=True)
 
+    # Prefect integration
+    prefect_deployment_id = Column(String(255), nullable=True)
+    prefect_flow_id = Column(String(255), nullable=True)
+
     # Audit fields
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())

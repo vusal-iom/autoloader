@@ -38,6 +38,22 @@ class Settings(BaseSettings):
     # Scheduler
     scheduler_check_interval: int = 60  # seconds
 
+    # Prefect Configuration (self-hosted as part of IOMETE stack)
+    prefect_api_url: str = "http://prefect-server:4200/api"
+
+    # Work Queues
+    prefect_default_work_queue: str = "autoloader-default"
+    prefect_high_memory_work_queue: str = "autoloader-high-memory"
+    prefect_priority_work_queue: str = "autoloader-priority"
+
+    # Flow Configuration
+    prefect_flow_run_timeout_seconds: int = 3600  # 1 hour
+    prefect_task_retry_delay_seconds: int = 60
+    prefect_max_task_retries: int = 3
+
+    # Resource Thresholds
+    high_memory_threshold_gb: int = 10  # Files > 10GB use high-memory queue
+
     # Monitoring
     metrics_retention_days: int = 30
 
