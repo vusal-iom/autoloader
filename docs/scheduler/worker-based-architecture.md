@@ -1,7 +1,8 @@
 # Worker-Based Architecture for Horizontal Scaling
 
-**Document Version:** 1.0
+**Document Version:** 2.0
 **Created:** 2025-11-07
+**Updated:** 2025-11-07
 **Status:** Technical Analysis
 **Related:** `apscheduler-horizontal-scaling.md`, `scheduler-scaling-and-risks.md`
 
@@ -33,31 +34,36 @@
 **Decoupled Server-Worker Architecture:**
 
 ```
-┌────────────────────────────────────┐
-│     Server (Singleton)             │
-│  - API endpoints                   │
-│  - Job scheduling (APScheduler)    │
-│  - Job queue management            │
-│  - Monitoring & UI                 │
-└────────────────────────────────────┘
-                 │
-                 ▼
-     ┌───────────────────────┐
-     │   Job Queue (DB)      │
-     │   - Pending jobs      │
-     │   - Job locks         │
-     │   - Status tracking   │
-     └───────────────────────┘
-                 │
-        ┌────────┴────────┬─────────┐
-        ▼                 ▼         ▼
-┌─────────────┐   ┌─────────────┐  ┌─────────────┐
-│  Worker 1   │   │  Worker 2   │  │  Worker N   │
-│  Stateless  │   │  Stateless  │  │  Stateless  │
-│  - Poll     │   │  - Poll     │  │  - Poll     │
-│  - Execute  │   │  - Execute  │  │  - Execute  │
-│  - Report   │   │  - Report   │  │  - Report   │
-└─────────────┘   └─────────────┘  └─────────────┘
+┌────────────────────────────────────────────────┐
+│           Server (Singleton)                   │
+│  - FastAPI (Job Distribution API)              │
+│  - APScheduler (Creates jobs on schedule)      │
+│  - Job Queue Manager (DB access layer)         │
+│  - Worker API (/jobs/claim, /jobs/complete)    │
+└────────────────────────────────────────────────┘
+                     │
+                     │ (Owns DB)
+                     ▼
+         ┌───────────────────────┐
+         │   Job Queue (DB)      │
+         │   - Pending jobs      │
+         │   - Status tracking   │
+         └───────────────────────┘
+                     │
+                     │ HTTP API
+        ┌────────────┼────────────┐
+        │            │            │
+        ▼            ▼            ▼
+┌──────────────┐ ┌──────────────┐ ┌──────────────┐
+│  Worker 1    │ │  Worker 2    │ │  Worker N    │
+│  (20 threads)│ │  (20 threads)│ │  (20 threads)│
+│              │ │              │ │              │
+│  Poll API    │ │  Poll API    │ │  Poll API    │
+│  Execute 20× │ │  Execute 20× │ │  Execute 20× │
+│  Report API  │ │  Report API  │ │  Report API  │
+└──────────────┘ └──────────────┘ └──────────────┘
+
+Scaling: 1,000 concurrent jobs = 50 workers × 20 threads
 ```
 
 ### 1.2 Key Benefits
@@ -73,25 +79,35 @@
 
 ### 1.3 How It Works
 
-**Server:**
+**Server (Singleton):**
 - Single instance (can have standby for HA)
 - Runs APScheduler to create jobs on schedule
 - Inserts pending jobs into database queue
-- Provides API for UI
-- Monitors worker health
+- **Exposes Worker API** (HTTP endpoints for job distribution)
+- Manages job lifecycle (claims, completion, failures)
+- Provides UI and monitoring dashboards
+- Detects stale jobs and triggers retries
 
-**Workers:**
-- Stateless, horizontally scalable
-- Poll database for pending jobs
-- Claim jobs using database locks (SELECT FOR UPDATE SKIP LOCKED)
-- Execute ingestions
-- Report results back to database
+**Workers (Multi-threaded, Horizontally Scalable):**
+- **Pure HTTP clients** - No direct database access
+- Each worker runs 10-50 concurrent threads (configurable)
+- Poll server API: `GET /api/v1/jobs/claim?count=5`
+- Execute ingestions in thread pool
+- Report status via API: `POST /api/v1/jobs/{id}/complete`
+- **Stateless** - Can restart anytime, no local persistence
 
 **Database:**
 - Single source of truth
+- Owned exclusively by server (workers never touch it)
 - Job queue (pending, in_progress, completed)
-- Built-in pessimistic locking
+- Built-in locking via `SELECT FOR UPDATE SKIP LOCKED`
 - No external coordination service needed
+
+**Concurrency Model:**
+- 1 worker × 20 threads = 20 concurrent jobs
+- 10 workers × 20 threads = 200 concurrent jobs
+- 50 workers × 20 threads = 1,000 concurrent jobs
+- **Much more efficient than 1 job per pod!**
 
 ### 1.4 Why This is Better Than Distributed APScheduler
 
@@ -112,81 +128,111 @@
 ### 2.1 Component Roles
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                      SERVER (Singleton)                      │
-│                                                               │
-│  ┌─────────────┐  ┌─────────────┐  ┌──────────────┐        │
-│  │ FastAPI     │  │ APScheduler │  │ Job Queue    │        │
-│  │ - APIs      │  │ - Cron      │  │ Manager      │        │
-│  │ - UI        │  │ - Triggers  │  │ - Enqueue    │        │
-│  └─────────────┘  └─────────────┘  └──────────────┘        │
-│                                                               │
-└───────────────────────────┬───────────────────────────────────┘
-                            │
-                            ▼
-              ┌─────────────────────────┐
-              │   PostgreSQL Database   │
-              │                         │
-              │   ┌─────────────────┐   │
-              │   │  job_queue      │   │
-              │   │  - id           │   │
-              │   │  - ingestion_id │   │
-              │   │  - status       │   │
-              │   │  - claimed_by   │   │
-              │   │  - claimed_at   │   │
-              │   │  - created_at   │   │
-              │   └─────────────────┘   │
-              │                         │
-              └─────────────────────────┘
-                            │
-              ┌─────────────┴─────────────┐
-              │                           │
-              ▼                           ▼
-    ┌──────────────────┐       ┌──────────────────┐
-    │   Worker 1       │       │   Worker 2       │
-    │                  │       │                  │
-    │  1. Poll DB      │       │  1. Poll DB      │
-    │  2. Claim job    │       │  2. Claim job    │
-    │  3. Execute      │       │  3. Execute      │
-    │  4. Update DB    │       │  4. Update DB    │
-    └──────────────────┘       └──────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                     SERVER (Singleton)                          │
+│                                                                  │
+│  ┌─────────────┐  ┌─────────────┐  ┌──────────────┐            │
+│  │ FastAPI     │  │ APScheduler │  │ Job Queue    │            │
+│  │ - UI APIs   │  │ - Cron      │  │ Manager      │            │
+│  │ - Worker    │  │ - Triggers  │  │ - Enqueue    │            │
+│  │   APIs      │  │ - Enqueue   │  │ - Claim      │            │
+│  └─────────────┘  └─────────────┘  └──────────────┘            │
+│         │                                    │                   │
+│         │  Worker API Endpoints:             │                   │
+│         │  - POST /jobs/claim?count=N        │                   │
+│         │  - POST /jobs/{id}/heartbeat       │                   │
+│         │  - POST /jobs/{id}/complete        │                   │
+│         │  - POST /jobs/{id}/fail            │                   │
+│         │                                    │                   │
+└─────────┼────────────────────────────────────┼───────────────────┘
+          │                                    │
+          │ HTTP                               ▼ (Exclusive DB access)
+          │                      ┌─────────────────────────┐
+          │                      │   PostgreSQL Database   │
+          │                      │  ┌──────────────────┐   │
+          │                      │  │  job_queue       │   │
+          │                      │  │  - status        │   │
+          │                      │  │  - priority      │   │
+          │                      │  └──────────────────┘   │
+          │                      └─────────────────────────┘
+          │
+          │ (Workers call server API)
+          │
+   ┌──────┴──────┬──────────────┬──────────────┐
+   │             │              │              │
+   ▼             ▼              ▼              ▼
+┌────────┐   ┌────────┐    ┌────────┐    ┌────────┐
+│Worker 1│   │Worker 2│    │Worker 3│    │Worker N│
+│        │   │        │    │        │    │        │
+│Thread  │   │Thread  │    │Thread  │    │Thread  │
+│ Pool   │   │ Pool   │    │ Pool   │    │ Pool   │
+│(20)    │   │(20)    │    │(20)    │    │(20)    │
+│        │   │        │    │        │    │        │
+│[====]  │   │[====]  │    │[====]  │    │[====]  │
+│[====]  │   │[====]  │    │[====]  │    │[====]  │
+│[====]  │   │[====]  │    │[====]  │    │[====]  │
+└────────┘   └────────┘    └────────┘    └────────┘
+
+Flow:
+1. Worker calls POST /jobs/claim?count=5
+2. Server uses SELECT FOR UPDATE SKIP LOCKED
+3. Server returns 5 jobs to worker
+4. Worker executes in thread pool
+5. Worker calls POST /jobs/{id}/complete for each
 ```
 
 ### 2.2 Sequence Diagram
 
 ```
-Server          Database        Worker 1        Worker 2
-  │                 │               │               │
-  │ (02:00 cron)    │               │               │
-  │ INSERT job      │               │               │
-  ├────────────────>│               │               │
-  │                 │               │               │
-  │                 │   Poll for    │               │
-  │                 │   pending job │               │
-  │                 │<──────────────┤               │
-  │                 │               │               │
-  │                 │ SELECT job    │               │
-  │                 │ FOR UPDATE    │               │
-  │                 │ SKIP LOCKED   │               │
-  │                 ├──────────────>│               │
-  │                 │               │               │
-  │                 │   (Job locked)│               │
-  │                 │               │   Poll for    │
-  │                 │               │   pending job │
-  │                 │               │<──────────────┤
-  │                 │               │               │
-  │                 │               │ No jobs (W1   │
-  │                 │               │ has lock)     │
-  │                 │               ├──────────────>│
-  │                 │               │               │
-  │                 │   Execute     │               │
-  │                 │   ingestion   │               │
-  │                 │   (30 mins)   │               │
-  │                 │               │               │
-  │                 │   UPDATE job  │               │
-  │                 │   status=DONE │               │
-  │                 │<──────────────┤               │
+Server API      Database        Worker 1 (20 threads)    Worker 2 (20 threads)
+  │                 │                    │                        │
+  │ (02:00 cron)    │                    │                        │
+  │ INSERT 100 jobs │                    │                        │
+  ├────────────────>│                    │                        │
+  │                 │                    │                        │
+  │                 │  POST /jobs/claim?count=10                  │
+  │<─────────────────────────────────────┤                        │
+  │                 │                    │                        │
+  │ SELECT 10 jobs  │                    │                        │
+  │ FOR UPDATE      │                    │                        │
+  │ SKIP LOCKED     │                    │                        │
+  ├────────────────>│                    │                        │
+  │                 │                    │                        │
+  │ Return [Job1..Job10]                 │                        │
+  ├─────────────────────────────────────>│                        │
+  │                 │                    │                        │
+  │                 │           POST /jobs/claim?count=10         │
+  │<───────────────────────────────────────────────────────────────┤
+  │                 │                    │                        │
+  │ SELECT 10 jobs  │                    │                        │
+  │ (SKIP LOCKED    │                    │                        │
+  │  skips Job1-10) │                    │                        │
+  ├────────────────>│                    │                        │
+  │                 │                    │                        │
+  │ Return [Job11..Job20]                │                        │
+  ├───────────────────────────────────────────────────────────────>│
+  │                 │                    │                        │
+  │                 │    Execute 10 jobs in thread pool           │
+  │                 │    (Thread 1: Job1, Thread 2: Job2, ...)    │
+  │                 │                    │                        │
+  │                 │  POST /jobs/1/complete                      │
+  │<─────────────────────────────────────┤                        │
+  │ UPDATE job      │                    │                        │
+  │ status=DONE     │                    │                        │
+  ├────────────────>│                    │                        │
+  │                 │                    │                        │
+  │ 200 OK          │                    │                        │
+  ├─────────────────────────────────────>│                        │
+  │                 │                    │                        │
+  │                 │   (Worker 1 continues completing Job2-10)   │
+  │                 │   (Worker 2 executes Job11-20 in parallel)  │
 ```
+
+**Key Points:**
+- Workers call server API (not database)
+- Server owns all database access (job claims via SELECT FOR UPDATE SKIP LOCKED)
+- Workers handle multiple jobs concurrently via thread pool
+- No duplicate claims (SKIP LOCKED ensures isolation)
 
 ### 2.3 Benefits
 
@@ -246,67 +292,191 @@ Server          Database        Worker 1        Worker 2
    - Server re-enqueues failed jobs (if retry policy allows)
 ```
 
-### 3.2 Worker Poll Loop
+### 3.2 Worker Poll Loop (Multi-threaded)
 
 ```python
-# Simplified worker logic
+# Multi-threaded worker logic
 
-def worker_main_loop():
-    while True:
-        # 1. Claim a job (atomic operation)
-        job = claim_next_job(worker_id)
+from concurrent.futures import ThreadPoolExecutor
+import requests
 
-        if job is None:
-            time.sleep(5)  # No work, wait
-            continue
+class Worker:
+    def __init__(self, worker_id: str, server_url: str, max_threads: int = 20):
+        self.worker_id = worker_id
+        self.server_url = server_url
+        self.max_threads = max_threads
+        self.executor = ThreadPoolExecutor(max_workers=max_threads)
+        self.active_jobs = {}  # job_id -> Future
 
-        # 2. Execute job
+    def main_loop(self):
+        """Main polling loop"""
+        while True:
+            # Check available capacity
+            available = self.max_threads - len(self.active_jobs)
+
+            if available > 0:
+                # Claim multiple jobs at once
+                jobs = self.claim_jobs(count=min(available, 10))
+
+                for job in jobs:
+                    # Execute in thread pool
+                    future = self.executor.submit(self.execute_job, job)
+                    self.active_jobs[job['id']] = future
+
+            # Clean up completed jobs
+            self.cleanup_completed()
+
+            # Brief pause
+            time.sleep(1)
+
+    def claim_jobs(self, count: int) -> list:
+        """Claim multiple jobs from server"""
+        response = requests.post(
+            f"{self.server_url}/api/v1/jobs/claim",
+            params={"count": count, "worker_id": self.worker_id}
+        )
+        if response.status_code == 200:
+            return response.json()['jobs']
+        return []
+
+    def execute_job(self, job: dict):
+        """Execute job (runs in thread pool)"""
         try:
-            execute_ingestion(job.ingestion_id)
-            mark_job_completed(job.id)
+            # Execute ingestion
+            run_ingestion(job['ingestion_id'])
+
+            # Report completion
+            requests.post(
+                f"{self.server_url}/api/v1/jobs/{job['id']}/complete",
+                json={"files_processed": 10, "records": 1000}
+            )
         except Exception as e:
-            mark_job_failed(job.id, error=str(e))
+            # Report failure
+            requests.post(
+                f"{self.server_url}/api/v1/jobs/{job['id']}/fail",
+                json={"error": str(e)}
+            )
 
-        # 3. Repeat (no delay, immediately look for next job)
+    def cleanup_completed(self):
+        """Remove completed futures"""
+        completed = [
+            job_id for job_id, future in self.active_jobs.items()
+            if future.done()
+        ]
+        for job_id in completed:
+            del self.active_jobs[job_id]
 ```
 
-### 3.3 Database-Based Locking
+**Key Benefits:**
+- **Efficient concurrency**: 1 worker handles 20 jobs simultaneously
+- **HTTP-based**: No database credentials needed in workers
+- **Batch claiming**: Request multiple jobs per API call
+- **Automatic cleanup**: Thread pool manages lifecycle
 
-**PostgreSQL `SELECT FOR UPDATE SKIP LOCKED`:**
+### 3.3 Server-Side Locking (Hidden from Workers)
 
-```sql
--- Worker tries to claim a job
-BEGIN;
+**Server API Endpoint: POST /jobs/claim**
 
-SELECT id, ingestion_id, created_at
-FROM job_queue
-WHERE status = 'PENDING'
-  AND scheduled_at <= NOW()
-ORDER BY priority DESC, created_at ASC
-LIMIT 1
-FOR UPDATE SKIP LOCKED;  -- Key: skip locked rows
+Workers call server API, server handles database locking internally:
 
--- If row returned, update to claim it
-UPDATE job_queue
-SET status = 'IN_PROGRESS',
-    claimed_by = 'worker-123',
-    claimed_at = NOW()
-WHERE id = <selected_id>;
+```python
+# Server-side job claim logic
 
-COMMIT;
+@router.post("/jobs/claim")
+def claim_jobs(count: int, worker_id: str, db: Session = Depends(get_db)):
+    """
+    Claim jobs for worker (server handles DB locking).
+
+    Workers never touch database directly.
+    """
+    claimed_jobs = []
+
+    # Use PostgreSQL's SELECT FOR UPDATE SKIP LOCKED
+    for _ in range(count):
+        result = db.execute("""
+            SELECT id, ingestion_id, priority
+            FROM job_queue
+            WHERE status = 'PENDING'
+              AND scheduled_at <= NOW()
+            ORDER BY priority DESC, created_at ASC
+            LIMIT 1
+            FOR UPDATE SKIP LOCKED  -- Magic: atomic lock
+        """).fetchone()
+
+        if result is None:
+            break  # No more jobs
+
+        # Claim job
+        db.execute("""
+            UPDATE job_queue
+            SET status = 'IN_PROGRESS',
+                claimed_by = :worker_id,
+                claimed_at = NOW(),
+                heartbeat_at = NOW()
+            WHERE id = :job_id
+        """, {'worker_id': worker_id, 'job_id': result.id})
+
+        claimed_jobs.append(result)
+
+    db.commit()
+    return {"jobs": claimed_jobs}
 ```
 
-**How `SKIP LOCKED` Works:**
-- Worker 1 locks Job A
-- Worker 2 tries to select: **skips** Job A (locked), selects Job B
-- Worker 3 tries to select: **skips** Job A and B, selects Job C
-- **No waiting, no blocking, no race conditions**
+**How `SKIP LOCKED` Prevents Conflicts:**
+- Request 1 (Worker 1): Locks Job A → Returns Job A
+- Request 2 (Worker 2, simultaneous): **Skips** locked Job A → Returns Job B
+- Request 3 (Worker 3, simultaneous): **Skips** Job A & B → Returns Job C
+- **Result: Zero conflicts, perfect distribution**
 
-**Why This is Perfect:**
-- Built into PostgreSQL 9.5+ (no new dependencies)
-- ACID guarantees
-- No network calls to coordination service
-- Efficient (single query)
+**Why This Architecture is Better:**
+- ✅ **Workers simpler**: Pure HTTP clients, no DB logic
+- ✅ **Security**: Workers don't need database credentials
+- ✅ **Flexibility**: Easy to change DB schema without updating workers
+- ✅ **Tenant isolation**: Server enforces multi-tenancy rules
+- ✅ **Built into PostgreSQL 9.5+**: No new dependencies
+
+### 3.4 Scaling Math: Why Multi-threading Matters
+
+**Scenario: 1,000 Concurrent Ingestions**
+
+**❌ BAD: One Job Per Worker (Single-threaded)**
+```
+1,000 jobs ÷ 1 job/worker = 1,000 workers needed
+1,000 Kubernetes pods × 512MB RAM = 512 GB RAM
+1,000 pods × 0.5 CPU = 500 CPU cores
+
+Cost: ~$5,000/month
+Overhead: Massive (pod startup, networking, etc.)
+```
+
+**✅ GOOD: Multi-threaded Workers**
+```
+1,000 jobs ÷ 20 jobs/worker = 50 workers needed
+50 Kubernetes pods × 2GB RAM = 100 GB RAM
+50 pods × 2 CPU = 100 CPU cores
+
+Cost: ~$500/month
+Overhead: Minimal
+```
+
+**Savings: 90% reduction in infrastructure cost!**
+
+**Realistic Scaling Tiers:**
+
+| Concurrent Jobs | Workers Needed | Total Pods | Monthly Cost |
+|-----------------|----------------|------------|--------------|
+| 100 | 5 × 20 threads | 5 | ~$50 |
+| 500 | 25 × 20 threads | 25 | ~$250 |
+| 1,000 | 50 × 20 threads | 50 | ~$500 |
+| 5,000 | 250 × 20 threads | 250 | ~$2,500 |
+| 10,000 | 500 × 20 threads | 500 | ~$5,000 |
+
+**Configuration:**
+- Threads per worker: 10-50 (configurable via `WORKER_THREADS`)
+- Start conservative (20), tune based on:
+  - Job duration (longer jobs → fewer threads)
+  - Memory usage (heavy jobs → fewer threads)
+  - CPU usage (CPU-bound → match core count)
 
 ---
 
@@ -316,54 +486,94 @@ COMMIT;
 
 **Responsibilities:**
 
-1. **API Server (FastAPI)**
+1. **User-Facing API (FastAPI)**
    - CRUD operations for ingestions
    - Run history queries
    - Manual triggers ("Run Now" button)
-   - Cluster management
+   - Cluster status dashboard
 
-2. **Job Scheduler (APScheduler - Single Instance)**
+2. **Worker-Facing API (FastAPI)**
+   - `POST /api/v1/jobs/claim?count=N` - Claim jobs for execution
+   - `POST /api/v1/jobs/{id}/heartbeat` - Worker heartbeat
+   - `POST /api/v1/jobs/{id}/complete` - Mark job complete
+   - `POST /api/v1/jobs/{id}/fail` - Mark job failed
+   - `POST /api/v1/workers/register` - Worker registration
+
+3. **Job Scheduler (APScheduler - Single Instance)**
    - Maintains cron schedules for active ingestions
    - Creates job queue entries when triggered
    - Does NOT execute jobs (just enqueues)
 
-3. **Job Queue Manager**
-   - Enqueues jobs into `job_queue` table
+4. **Job Queue Manager**
+   - Enqueues jobs into `job_queue` table (on cron trigger)
+   - Claims jobs for workers (SELECT FOR UPDATE SKIP LOCKED)
    - Monitors queue health
    - Detects stale jobs (heartbeat timeout)
    - Re-enqueues failed jobs (retry logic)
 
-4. **Worker Health Monitor**
-   - Tracks active workers (heartbeat)
+5. **Worker Health Monitor**
+   - Tracks active workers (heartbeat table)
    - Detects dead workers
    - Provides metrics (Prometheus)
+   - Auto-scaling recommendations
 
-**Key Point:** Server does NOT execute ingestions. It only schedules and monitors.
+**Key Points:**
+- Server owns ALL database access
+- Workers are pure HTTP clients
+- Server does NOT execute ingestions (workers do)
 
-### 4.2 Worker Component
+### 4.2 Worker Component (Multi-threaded)
+
+**Architecture:**
+```
+Worker Pod
+├── Main Thread (polling loop)
+├── Thread Pool Executor (10-50 threads)
+│   ├── Thread 1: Executing Job A
+│   ├── Thread 2: Executing Job B
+│   ├── Thread 3: Idle
+│   └── ...
+└── HTTP Client (requests to server API)
+```
 
 **Responsibilities:**
 
-1. **Job Poller**
-   - Polls `job_queue` table for pending jobs
-   - Uses `SELECT FOR UPDATE SKIP LOCKED`
-   - Claims jobs atomically
+1. **Job Poller (Main Thread)**
+   - Continuously polls server API: `POST /jobs/claim?count=N`
+   - Calculates available capacity: `max_threads - active_jobs`
+   - Requests multiple jobs per API call (batch claiming)
+   - **Never touches database directly**
 
-2. **Job Executor**
-   - Executes claimed ingestion
+2. **Job Executor (Thread Pool)**
+   - Each thread executes one ingestion at a time
    - Uses existing `BatchOrchestrator`
-   - Sends heartbeat updates during execution
+   - Sends periodic heartbeats: `POST /jobs/{id}/heartbeat`
+   - Reports completion: `POST /jobs/{id}/complete`
 
 3. **Status Reporter**
-   - Updates job status in database
-   - Records metrics (duration, files processed, etc.)
-   - Logs errors and failures
+   - Reports success with metrics (files processed, duration, etc.)
+   - Reports failures with error details
+   - All communication via server API (no DB access)
 
-4. **Health Reporter**
-   - Sends periodic heartbeats to server
-   - Reports worker capacity (idle threads, memory)
+4. **Capacity Manager**
+   - Tracks active jobs (job_id → Future mapping)
+   - Cleans up completed futures
+   - Reports utilization to server on heartbeat
 
-**Key Point:** Workers are stateless. No local state. Can restart anytime.
+**Configuration:**
+```python
+# Environment variables
+WORKER_ID = "worker-abc123"      # Unique ID
+SERVER_URL = "http://server:8000"  # Server API URL
+WORKER_THREADS = 20              # Concurrency
+POLL_INTERVAL = 1                # Seconds between polls
+```
+
+**Key Points:**
+- **Stateless**: No local database, no file storage
+- **Pure HTTP client**: Only talks to server API
+- **Multi-threaded**: Handles 10-50 jobs concurrently
+- **Can restart anytime**: Stale jobs auto-retried by server
 
 ### 4.3 Database Tables
 
@@ -506,6 +716,99 @@ def try_become_leader(server_id: str):
 - No special HA needed
 - Workers are stateless
 - If worker dies, job becomes stale and gets re-enqueued
+
+### 5.4 Server Worker API Specification
+
+Complete API contract between server and workers:
+
+```python
+# app/api/v1/worker_api.py
+
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+from typing import List
+from pydantic import BaseModel
+
+router = APIRouter(prefix="/api/v1/jobs", tags=["worker-api"])
+
+# Request/Response schemas
+class JobClaimRequest(BaseModel):
+    worker_id: str
+    count: int = 10  # Number of jobs to claim
+    capabilities: dict = {}  # Optional: worker capabilities
+
+class JobResponse(BaseModel):
+    id: str
+    ingestion_id: str
+    priority: int
+    scheduled_at: datetime
+    max_execution_time: int  # seconds
+
+class JobCompletionRequest(BaseModel):
+    files_processed: int
+    records_processed: int
+    duration_seconds: float
+
+class JobFailureRequest(BaseModel):
+    error_message: str
+    error_type: str  # "timeout", "spark_error", "network_error", etc.
+
+# Endpoints
+
+@router.post("/claim")
+def claim_jobs(request: JobClaimRequest, db: Session = Depends(get_db)):
+    """
+    Claim pending jobs for worker execution.
+
+    Server uses SELECT FOR UPDATE SKIP LOCKED internally.
+    Returns up to `count` jobs.
+    """
+    # Implementation in section 7.x
+    pass
+
+@router.post("/{job_id}/heartbeat")
+def job_heartbeat(job_id: str, worker_id: str, db: Session = Depends(get_db)):
+    """
+    Update job heartbeat (worker still alive).
+
+    Called periodically during long-running jobs.
+    """
+    pass
+
+@router.post("/{job_id}/complete")
+def complete_job(
+    job_id: str,
+    completion: JobCompletionRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Mark job as completed with metrics.
+    """
+    pass
+
+@router.post("/{job_id}/fail")
+def fail_job(
+    job_id: str,
+    failure: JobFailureRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Mark job as failed with error details.
+    """
+    pass
+
+@router.post("/workers/register")
+def register_worker(worker_id: str, max_threads: int, db: Session = Depends(get_db)):
+    """
+    Register worker (upsert worker_heartbeats table).
+    """
+    pass
+```
+
+**Authentication:**
+- Workers authenticate via API key (shared secret)
+- Or mTLS for production environments
+- Server validates worker identity before job assignment
 
 ---
 
@@ -838,304 +1141,486 @@ class SchedulerService:
         logger.info(f"Job {job.id} enqueued for ingestion {ingestion_id}")
 ```
 
-### 7.3 Worker: Main Loop
+### 7.3 Worker: Main Loop (Multi-threaded)
 
 ```python
 # app/worker.py
 
 import time
 import logging
+import requests
 from datetime import datetime
 from uuid import uuid4
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import List, Dict
 
-from app.database import SessionLocal
-from app.services.worker_service import WorkerService
 from app.config import settings
+from app.services.batch_orchestrator import BatchOrchestrator
 
 logger = logging.getLogger(__name__)
 
+class MultiThreadedWorker:
+    """
+    Multi-threaded worker that polls server API and executes jobs concurrently.
+
+    No database access - pure HTTP client.
+    """
+
+    def __init__(
+        self,
+        worker_id: str,
+        server_url: str,
+        max_threads: int = 20
+    ):
+        self.worker_id = worker_id
+        self.server_url = server_url
+        self.max_threads = max_threads
+        self.executor = ThreadPoolExecutor(max_workers=max_threads)
+        self.active_jobs: Dict[str, Future] = {}  # job_id -> Future
+
+    def start(self):
+        """Start worker main loop."""
+        logger.info(
+            f"Starting worker {self.worker_id} "
+            f"(server={self.server_url}, threads={self.max_threads})"
+        )
+
+        # Register with server
+        self.register()
+
+        try:
+            # Main polling loop
+            while True:
+                try:
+                    # Calculate available capacity
+                    available = self.max_threads - len(self.active_jobs)
+
+                    if available > 0:
+                        # Claim jobs from server
+                        jobs = self.claim_jobs(count=min(available, 10))
+
+                        for job in jobs:
+                            # Submit to thread pool
+                            future = self.executor.submit(self.execute_job, job)
+                            self.active_jobs[job['id']] = future
+                            logger.info(f"Submitted job {job['id']} to thread pool")
+
+                    # Clean up completed jobs
+                    self.cleanup_completed()
+
+                    # Brief pause
+                    time.sleep(settings.WORKER_POLL_INTERVAL or 1)
+
+                except KeyboardInterrupt:
+                    logger.info("Worker shutting down (KeyboardInterrupt)")
+                    break
+
+                except Exception as e:
+                    logger.error(f"Polling loop error: {e}", exc_info=True)
+                    time.sleep(5)
+
+        finally:
+            # Shutdown
+            self.shutdown()
+
+    def register(self):
+        """Register worker with server."""
+        try:
+            response = requests.post(
+                f"{self.server_url}/api/v1/workers/register",
+                json={
+                    "worker_id": self.worker_id,
+                    "max_threads": self.max_threads,
+                    "version": settings.VERSION
+                }
+            )
+            response.raise_for_status()
+            logger.info(f"Worker {self.worker_id} registered")
+        except Exception as e:
+            logger.error(f"Failed to register: {e}")
+            raise
+
+    def claim_jobs(self, count: int) -> List[dict]:
+        """Claim jobs from server API."""
+        try:
+            response = requests.post(
+                f"{self.server_url}/api/v1/jobs/claim",
+                json={
+                    "worker_id": self.worker_id,
+                    "count": count
+                },
+                timeout=10
+            )
+
+            if response.status_code == 200:
+                jobs = response.json().get('jobs', [])
+                if jobs:
+                    logger.info(f"Claimed {len(jobs)} jobs from server")
+                return jobs
+            elif response.status_code == 204:
+                # No jobs available
+                return []
+            else:
+                logger.warning(f"Claim failed: {response.status_code}")
+                return []
+
+        except Exception as e:
+            logger.error(f"Failed to claim jobs: {e}")
+            return []
+
+    def execute_job(self, job: dict):
+        """
+        Execute job (runs in thread pool).
+
+        This is the actual ingestion execution logic.
+        """
+        job_id = job['id']
+        ingestion_id = job['ingestion_id']
+
+        try:
+            logger.info(f"Executing job {job_id} (ingestion {ingestion_id})")
+
+            # Execute ingestion using BatchOrchestrator
+            orchestrator = BatchOrchestrator()
+            result = orchestrator.run_scheduled_ingestion(
+                ingestion_id=ingestion_id,
+                run_id=job.get('run_id'),
+                heartbeat_callback=lambda: self.send_heartbeat(job_id)
+            )
+
+            # Report completion to server
+            self.complete_job(job_id, result)
+
+            logger.info(
+                f"Job {job_id} completed. "
+                f"Processed {result['files_processed']} files, "
+                f"{result['records_processed']} records"
+            )
+
+        except Exception as e:
+            logger.error(f"Job {job_id} failed: {e}", exc_info=True)
+
+            # Report failure to server
+            self.fail_job(job_id, str(e))
+
+    def send_heartbeat(self, job_id: str):
+        """Send job heartbeat to server."""
+        try:
+            requests.post(
+                f"{self.server_url}/api/v1/jobs/{job_id}/heartbeat",
+                json={"worker_id": self.worker_id},
+                timeout=5
+            )
+        except Exception as e:
+            logger.warning(f"Heartbeat failed for job {job_id}: {e}")
+
+    def complete_job(self, job_id: str, result: dict):
+        """Report job completion to server."""
+        try:
+            response = requests.post(
+                f"{self.server_url}/api/v1/jobs/{job_id}/complete",
+                json={
+                    "files_processed": result.get('files_processed', 0),
+                    "records_processed": result.get('records_processed', 0),
+                    "duration_seconds": result.get('duration_seconds', 0)
+                },
+                timeout=10
+            )
+            response.raise_for_status()
+        except Exception as e:
+            logger.error(f"Failed to report completion for job {job_id}: {e}")
+
+    def fail_job(self, job_id: str, error: str):
+        """Report job failure to server."""
+        try:
+            response = requests.post(
+                f"{self.server_url}/api/v1/jobs/{job_id}/fail",
+                json={
+                    "error_message": error,
+                    "error_type": "execution_error"
+                },
+                timeout=10
+            )
+            response.raise_for_status()
+        except Exception as e:
+            logger.error(f"Failed to report failure for job {job_id}: {e}")
+
+    def cleanup_completed(self):
+        """Remove completed futures from active jobs."""
+        completed = [
+            job_id for job_id, future in self.active_jobs.items()
+            if future.done()
+        ]
+
+        for job_id in completed:
+            del self.active_jobs[job_id]
+
+        if completed:
+            logger.debug(f"Cleaned up {len(completed)} completed jobs")
+
+    def shutdown(self):
+        """Gracefully shutdown worker."""
+        logger.info(f"Shutting down worker {self.worker_id}")
+
+        # Wait for active jobs to complete (with timeout)
+        logger.info(f"Waiting for {len(self.active_jobs)} active jobs to complete...")
+        self.executor.shutdown(wait=True, timeout=300)
+
+        logger.info(f"Worker {self.worker_id} stopped")
+
+
 def main():
-    """
-    Worker main entry point.
-
-    Runs infinite loop:
-    1. Poll for job
-    2. Execute job
-    3. Report status
-    4. Repeat
-    """
+    """Worker entry point."""
     worker_id = settings.WORKER_ID or f"worker-{uuid4()}"
+    server_url = settings.SERVER_URL or "http://localhost:8000"
+    max_threads = settings.WORKER_THREADS or 20
 
-    logger.info(f"Starting worker {worker_id}")
+    worker = MultiThreadedWorker(
+        worker_id=worker_id,
+        server_url=server_url,
+        max_threads=max_threads
+    )
 
-    # Initialize worker service
-    db = SessionLocal()
-    worker = WorkerService(db, worker_id)
+    worker.start()
 
-    try:
-        # Register worker
-        worker.register()
-
-        # Main loop
-        while True:
-            try:
-                # 1. Try to claim a job
-                job = worker.claim_next_job()
-
-                if job is None:
-                    # No work available
-                    worker.send_heartbeat(status="IDLE")
-                    time.sleep(settings.WORKER_POLL_INTERVAL)
-                    continue
-
-                # 2. Execute job
-                logger.info(f"Worker {worker_id} claimed job {job.id}")
-                worker.execute_job(job)
-
-                # 3. Immediately look for next job (no delay)
-
-            except KeyboardInterrupt:
-                logger.info("Worker shutting down (KeyboardInterrupt)")
-                break
-
-            except Exception as e:
-                logger.error(f"Worker error: {e}", exc_info=True)
-                time.sleep(5)  # Brief pause on error
-
-    finally:
-        # Cleanup
-        worker.unregister()
-        db.close()
-        logger.info(f"Worker {worker_id} stopped")
 
 if __name__ == "__main__":
     main()
 ```
 
-### 7.4 Worker: Service Implementation
+**Key Differences from Single-threaded:**
+- ✅ Thread pool executor (10-50 concurrent jobs)
+- ✅ HTTP client only (no database access)
+- ✅ Batch job claiming (request multiple jobs per API call)
+- ✅ Automatic capacity management
+- ✅ Graceful shutdown waits for active jobs
+
+### 7.4 Server: Worker API Implementation
+
+Server-side endpoints that workers call:
 
 ```python
-# app/services/worker_service.py
+# app/api/v1/worker_api.py
 
-from datetime import datetime
-from typing import Optional
-from uuid import UUID
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from typing import List
+from datetime import datetime
+from pydantic import BaseModel
 
+from app.database import get_db
 from app.models.domain import JobQueue, Run
 from app.models.enums import JobStatus, RunStatus
 from app.repositories.job_queue_repository import JobQueueRepository
-from app.repositories.run_repository import RunRepository
-from app.services.batch_orchestrator import BatchOrchestrator
 
-class WorkerService:
+router = APIRouter(prefix="/api/v1", tags=["worker-api"])
+
+# Schemas
+class JobClaimRequest(BaseModel):
+    worker_id: str
+    count: int = 10
+
+class JobResponse(BaseModel):
+    id: str
+    ingestion_id: str
+    priority: int
+    scheduled_at: datetime
+
+class JobCompletionRequest(BaseModel):
+    files_processed: int
+    records_processed: int
+    duration_seconds: float
+
+class JobFailureRequest(BaseModel):
+    error_message: str
+    error_type: str
+
+# Endpoints
+
+@router.post("/jobs/claim")
+def claim_jobs(request: JobClaimRequest, db: Session = Depends(get_db)):
     """
-    Worker-side service for claiming and executing jobs.
+    Claim jobs for worker execution.
+
+    Uses SELECT FOR UPDATE SKIP LOCKED to prevent conflicts.
     """
+    claimed_jobs = []
 
-    def __init__(self, db: Session, worker_id: str):
-        self.db = db
-        self.worker_id = worker_id
-        self.job_repo = JobQueueRepository(db)
-        self.run_repo = RunRepository(db)
-        self.orchestrator = BatchOrchestrator(db)
+    for _ in range(request.count):
+        # Atomically claim one job
+        result = db.execute("""
+            SELECT id, ingestion_id, priority, scheduled_at
+            FROM job_queue
+            WHERE status = 'PENDING'
+              AND scheduled_at <= NOW()
+            ORDER BY priority DESC, created_at ASC
+            LIMIT 1
+            FOR UPDATE SKIP LOCKED
+        """).fetchone()
 
-    def register(self):
-        """Register worker in heartbeat table."""
-        self.db.execute("""
-            INSERT INTO worker_heartbeats (
-                worker_id, last_heartbeat_at, status,
-                total_threads, busy_threads, available_threads,
-                started_at, host, version
-            ) VALUES (
-                :worker_id, NOW(), 'ACTIVE',
-                :threads, 0, :threads,
-                NOW(), :host, :version
-            )
-            ON CONFLICT (worker_id) DO UPDATE
-            SET last_heartbeat_at = NOW(),
-                status = 'ACTIVE',
-                available_threads = :threads
-        """, {
-            'worker_id': self.worker_id,
-            'threads': settings.WORKER_THREADS,
-            'host': socket.gethostname(),
-            'version': settings.VERSION
-        })
-        self.db.commit()
-        logger.info(f"Worker {self.worker_id} registered")
+        if result is None:
+            break  # No more jobs
 
-    def claim_next_job(self) -> Optional[JobQueue]:
-        """
-        Claim next pending job using SELECT FOR UPDATE SKIP LOCKED.
+        # Claim job
+        db.execute("""
+            UPDATE job_queue
+            SET status = 'IN_PROGRESS',
+                claimed_by = :worker_id,
+                claimed_at = NOW(),
+                heartbeat_at = NOW(),
+                started_at = NOW()
+            WHERE id = :job_id
+        """, {'worker_id': request.worker_id, 'job_id': result.id})
 
-        This is the magic that enables horizontal scaling.
-        """
-        try:
-            # Start transaction
-            job = self.db.execute("""
-                SELECT id, ingestion_id, scheduled_at, priority
-                FROM job_queue
-                WHERE status = 'PENDING'
-                  AND scheduled_at <= NOW()
-                ORDER BY priority DESC, created_at ASC
-                LIMIT 1
-                FOR UPDATE SKIP LOCKED
-            """).fetchone()
+        claimed_jobs.append(JobResponse(
+            id=str(result.id),
+            ingestion_id=str(result.ingestion_id),
+            priority=result.priority,
+            scheduled_at=result.scheduled_at
+        ))
 
-            if job is None:
-                return None
+    db.commit()
 
-            # Claim job
-            self.db.execute("""
-                UPDATE job_queue
-                SET status = 'IN_PROGRESS',
-                    claimed_by = :worker_id,
-                    claimed_at = NOW(),
-                    heartbeat_at = NOW(),
-                    started_at = NOW()
-                WHERE id = :job_id
-            """, {'worker_id': self.worker_id, 'job_id': job.id})
+    if not claimed_jobs:
+        return Response(status_code=204)  # No Content
 
-            self.db.commit()
+    return {"jobs": claimed_jobs}
 
-            # Fetch full job object
-            claimed_job = self.job_repo.get_by_id(job.id)
-            logger.info(f"Claimed job {job.id} for ingestion {job.ingestion_id}")
 
-            return claimed_job
+@router.post("/jobs/{job_id}/heartbeat")
+def job_heartbeat(job_id: str, worker_id: str, db: Session = Depends(get_db)):
+    """
+    Update job heartbeat (worker still alive).
+    """
+    result = db.execute("""
+        UPDATE job_queue
+        SET heartbeat_at = NOW()
+        WHERE id = :job_id
+          AND claimed_by = :worker_id
+          AND status = 'IN_PROGRESS'
+    """, {'job_id': job_id, 'worker_id': worker_id})
 
-        except Exception as e:
-            self.db.rollback()
-            logger.error(f"Failed to claim job: {e}")
-            return None
+    if result.rowcount == 0:
+        raise HTTPException(status_code=404, detail="Job not found or not claimed by worker")
 
-    def execute_job(self, job: JobQueue):
-        """
-        Execute claimed job.
+    db.commit()
+    return {"status": "ok"}
 
-        Creates Run record and delegates to BatchOrchestrator.
-        """
-        try:
-            # Create Run record
-            run = Run(
-                ingestion_id=job.ingestion_id,
-                tenant_id=job.tenant_id,
-                status=RunStatus.IN_PROGRESS,
-                started_at=datetime.utcnow(),
-                triggered_by="scheduler"
-            )
-            self.db.add(run)
-            self.db.commit()
-            self.db.refresh(run)
 
-            # Link job to run
-            job.run_id = run.id
-            self.db.commit()
+@router.post("/jobs/{job_id}/complete")
+def complete_job(
+    job_id: str,
+    completion: JobCompletionRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Mark job as completed with metrics.
+    """
+    # Get job
+    job = db.query(JobQueue).filter(JobQueue.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
 
-            logger.info(f"Executing job {job.id} (run {run.id})")
+    # Update job
+    job.status = JobStatus.COMPLETED
+    job.finished_at = datetime.utcnow()
 
-            # Execute ingestion with heartbeat callback
-            def heartbeat_callback():
-                self.send_heartbeat(
-                    status="BUSY",
-                    current_job_id=job.id
-                )
-
-            result = self.orchestrator.run_scheduled_ingestion(
-                ingestion_id=job.ingestion_id,
-                run_id=run.id,
-                heartbeat_callback=heartbeat_callback
-            )
-
-            # Mark job as completed
-            job.status = JobStatus.COMPLETED
-            job.finished_at = datetime.utcnow()
-
+    # Update run (if exists)
+    if job.run_id:
+        run = db.query(Run).filter(Run.id == job.run_id).first()
+        if run:
             run.status = RunStatus.COMPLETED
             run.finished_at = datetime.utcnow()
-            run.files_processed = result['files_processed']
-            run.records_processed = result['records_processed']
+            run.files_processed = completion.files_processed
+            run.records_processed = completion.records_processed
 
-            self.db.commit()
+    db.commit()
 
-            logger.info(
-                f"Job {job.id} completed. "
-                f"Processed {result['files_processed']} files, "
-                f"{result['records_processed']} records."
-            )
+    logger.info(
+        f"Job {job_id} completed. "
+        f"Processed {completion.files_processed} files, "
+        f"{completion.records_processed} records"
+    )
 
-            # Update worker stats
-            self.db.execute("""
-                UPDATE worker_heartbeats
-                SET jobs_completed = jobs_completed + 1
-                WHERE worker_id = :worker_id
-            """, {'worker_id': self.worker_id})
-            self.db.commit()
+    return {"status": "completed"}
 
-        except Exception as e:
-            logger.error(f"Job {job.id} failed: {e}", exc_info=True)
 
-            # Mark job as failed
-            job.status = JobStatus.FAILED
-            job.finished_at = datetime.utcnow()
-            job.error_message = str(e)
+@router.post("/jobs/{job_id}/fail")
+def fail_job(
+    job_id: str,
+    failure: JobFailureRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Mark job as failed with error details.
+    """
+    # Get job
+    job = db.query(JobQueue).filter(JobQueue.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
 
-            if job.run_id:
-                run = self.run_repo.get_by_id(job.run_id)
-                run.status = RunStatus.FAILED
-                run.finished_at = datetime.utcnow()
-                run.error_message = str(e)
+    # Update job
+    job.status = JobStatus.FAILED
+    job.finished_at = datetime.utcnow()
+    job.error_message = failure.error_message
 
-            self.db.commit()
+    # Update run (if exists)
+    if job.run_id:
+        run = db.query(Run).filter(Run.id == job.run_id).first()
+        if run:
+            run.status = RunStatus.FAILED
+            run.finished_at = datetime.utcnow()
+            run.error_message = failure.error_message
 
-            # Update worker stats
-            self.db.execute("""
-                UPDATE worker_heartbeats
-                SET jobs_failed = jobs_failed + 1
-                WHERE worker_id = :worker_id
-            """, {'worker_id': self.worker_id})
-            self.db.commit()
+    db.commit()
 
-    def send_heartbeat(
-        self,
-        status: str = "ACTIVE",
-        current_job_id: UUID = None
-    ):
-        """Send heartbeat to server."""
-        self.db.execute("""
-            UPDATE worker_heartbeats
-            SET last_heartbeat_at = NOW(),
-                status = :status,
-                current_job_id = :job_id
-            WHERE worker_id = :worker_id
-        """, {
-            'worker_id': self.worker_id,
-            'status': status,
-            'job_id': current_job_id
-        })
-        self.db.commit()
+    logger.error(f"Job {job_id} failed: {failure.error_message}")
 
-        # Also update job heartbeat if executing
-        if current_job_id:
-            self.db.execute("""
-                UPDATE job_queue
-                SET heartbeat_at = NOW()
-                WHERE id = :job_id
-            """, {'job_id': current_job_id})
-            self.db.commit()
+    return {"status": "failed"}
 
-    def unregister(self):
-        """Mark worker as dead."""
-        self.db.execute("""
-            UPDATE worker_heartbeats
-            SET status = 'DEAD',
-                last_heartbeat_at = NOW()
-            WHERE worker_id = :worker_id
-        """, {'worker_id': self.worker_id})
-        self.db.commit()
-        logger.info(f"Worker {self.worker_id} unregistered")
+
+@router.post("/workers/register")
+def register_worker(
+    worker_id: str,
+    max_threads: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Register worker (upsert worker_heartbeats table).
+    """
+    db.execute("""
+        INSERT INTO worker_heartbeats (
+            worker_id, last_heartbeat_at, status,
+            total_threads, busy_threads, available_threads,
+            started_at, host, version
+        ) VALUES (
+            :worker_id, NOW(), 'ACTIVE',
+            :threads, 0, :threads,
+            NOW(), :host, :version
+        )
+        ON CONFLICT (worker_id) DO UPDATE
+        SET last_heartbeat_at = NOW(),
+            status = 'ACTIVE',
+            total_threads = :threads,
+            available_threads = :threads
+    """, {
+        'worker_id': worker_id,
+        'threads': max_threads,
+        'host': 'unknown',  # Worker could send this
+        'version': settings.VERSION
+    })
+
+    db.commit()
+    logger.info(f"Worker {worker_id} registered with {max_threads} threads")
+
+    return {"status": "registered"}
 ```
+
+**Key Points:**
+- Server owns ALL database access
+- Workers never see database credentials
+- Atomic job claiming via `SELECT FOR UPDATE SKIP LOCKED`
+- Clean HTTP API contract
 
 ---
 
@@ -2195,3 +2680,70 @@ This gives you:
 - **Rationale:** Best cost-benefit ratio, simple, scalable, no new dependencies
 - **Implementation Timeline:** 1 week
 - **Expected Capacity:** 1,000+ scheduled ingestions
+
+---
+
+## 16. Architecture Summary
+
+### Key Design Decisions
+
+**1. Server-Based Job Distribution (Not Direct DB Access)**
+- ✅ Workers poll server HTTP API, not database
+- ✅ Server owns ALL database access (security boundary)
+- ✅ Clean separation: workers are pure execution engines
+- ✅ Easy to change DB schema without updating workers
+
+**2. Multi-threaded Workers (Not One Job Per Pod)**
+- ✅ Each worker handles 10-50 concurrent jobs via thread pool
+- ✅ 50 workers × 20 threads = 1,000 concurrent jobs
+- ✅ 90% cost reduction vs single-threaded approach
+- ✅ Configurable concurrency per worker
+
+**3. HTTP API Contract**
+```
+Workers → Server API → Database
+
+POST /api/v1/jobs/claim?count=N     # Batch job claiming
+POST /api/v1/jobs/{id}/heartbeat    # Keep-alive
+POST /api/v1/jobs/{id}/complete     # Report success
+POST /api/v1/jobs/{id}/fail         # Report failure
+POST /api/v1/workers/register       # Worker registration
+```
+
+**4. Database Locking (Hidden from Workers)**
+- Server uses `SELECT FOR UPDATE SKIP LOCKED` internally
+- Workers never deal with locking logic
+- Atomic, conflict-free job distribution
+
+**5. Scaling Math**
+```
+Scenario: 1,000 concurrent ingestions
+
+Single-threaded:  1,000 workers × 512MB = 512GB RAM ($5,000/mo)
+Multi-threaded:      50 workers × 2GB   = 100GB RAM ($500/mo)
+
+Savings: 90%
+```
+
+### Why This Design is Superior
+
+| Aspect | Worker-Based (v2.0) | Distributed APScheduler | Single APScheduler |
+|--------|---------------------|------------------------|-------------------|
+| **Architecture** | Server API + Multi-threaded workers | Distributed coordinatio | Single process |
+| **Concurrency** | 50 workers × 20 threads = 1,000 jobs | Complex rebalancing | Limited by single process |
+| **Database Access** | Server only (secure) | Every worker (credentials leak) | Single process |
+| **Infrastructure** | Database + Workers | Database + Redis + Workers | Database |
+| **Scaling** | Add workers (trivial) | Complex (rebalancing) | Vertical only |
+| **Cost (1K jobs)** | ~$500/month | ~$5,000/month | N/A (can't scale) |
+| **Implementation** | 1 week | 3 weeks | 0 days (exists) |
+| **Operational Complexity** | Low | High | Low |
+
+### Implementation Checklist
+
+- [ ] Phase 1: Database schema (job_queue, worker_heartbeats)
+- [ ] Phase 2: Server worker API endpoints
+- [ ] Phase 3: Multi-threaded worker implementation
+- [ ] Phase 4: Integration testing (simulate 100+ concurrent jobs)
+- [ ] Phase 5: Production deployment with auto-scaling
+
+**Next Step:** Review and approve architecture, then begin Phase 1.
