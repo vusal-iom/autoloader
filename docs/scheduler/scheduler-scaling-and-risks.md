@@ -27,14 +27,14 @@
 
 Managing multiple scheduled ingestions at the Python application level (APScheduler) introduces several **production risks**:
 
-| Risk Category | Severity | Impact | Mitigation Complexity |
-|--------------|----------|--------|----------------------|
-| **Single Point of Failure** | 🔴 HIGH | All schedules stop | Medium |
-| **Resource Contention** | 🟡 MEDIUM | Performance degradation | Low |
-| **Scalability Ceiling** | 🟡 MEDIUM | Limited to ~1000 jobs | High |
-| **Memory Leaks** | 🟡 MEDIUM | Requires restarts | Medium |
-| **Thundering Herd** | 🟠 LOW-MEDIUM | Cluster overload | Medium |
-| **State Inconsistency** | 🟡 MEDIUM | Lost schedules on crash | Low |
+| Risk Category               | Severity      | Impact                  | Mitigation Complexity |
+| --------------------------- | ------------- | ----------------------- | --------------------- |
+| **Single Point of Failure** | 🔴 HIGH       | All schedules stop      | Medium                |
+| **Resource Contention**     | 🟡 MEDIUM     | Performance degradation | Low                   |
+| **Scalability Ceiling**     | 🟡 MEDIUM     | Limited to ~1000 jobs   | High                  |
+| **Memory Leaks**            | 🟡 MEDIUM     | Requires restarts       | Medium                |
+| **Thundering Herd**         | 🟠 LOW-MEDIUM | Cluster overload        | Medium                |
+| **State Inconsistency**     | 🟡 MEDIUM     | Lost schedules on crash | Low                   |
 
 ### 1.2 Recommendation
 
