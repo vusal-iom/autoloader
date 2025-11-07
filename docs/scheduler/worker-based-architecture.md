@@ -62,14 +62,14 @@
 
 ### 1.2 Key Benefits
 
-| Aspect | Value |
-|--------|-------|
-| **Complexity** | 🟢 LOW - No distributed coordination needed |
-| **Scalability** | 🟢 EXCELLENT - Add workers as needed |
-| **Implementation Time** | 🟢 1 week (vs 3 weeks for distributed APScheduler) |
-| **Operational Overhead** | 🟢 LOW - No Redis/ZooKeeper needed |
-| **Debugging** | 🟢 EASY - Clear separation of concerns |
-| **Cost** | 🟢 LOW - Database-only coordination |
+| Aspect                   | Value                                              |
+| ------------------------ | -------------------------------------------------- |
+| **Complexity**           | 🟢 LOW - No distributed coordination needed        |
+| **Scalability**          | 🟢 EXCELLENT - Add workers as needed               |
+| **Implementation Time**  | 🟢 1 week (vs 3 weeks for distributed APScheduler) |
+| **Operational Overhead** | 🟢 LOW - No Redis/ZooKeeper needed                 |
+| **Debugging**            | 🟢 EASY - Clear separation of concerns             |
+| **Cost**                 | 🟢 LOW - Database-only coordination                |
 
 ### 1.3 How It Works
 
@@ -95,15 +95,15 @@
 
 ### 1.4 Why This is Better Than Distributed APScheduler
 
-| Feature | Worker-Based | Distributed APScheduler |
-|---------|--------------|------------------------|
-| **Coordination** | Database (built-in) | Redis/ZooKeeper (new service) |
-| **Complexity** | Simple | High (distributed systems) |
-| **Failure Modes** | Few, well-understood | Many (split-brain, lock contention) |
-| **Horizontal Scaling** | Trivial (add workers) | Complex (rebalancing) |
-| **Development Time** | 1 week | 3 weeks |
-| **Learning Curve** | Low | High (distributed systems) |
-| **Debugging** | Easy (DB queries) | Hard (distributed tracing) |
+| Feature                | Worker-Based          | Distributed APScheduler             |
+| ---------------------- | --------------------- | ----------------------------------- |
+| **Coordination**       | Database (built-in)   | Redis/ZooKeeper (new service)       |
+| **Complexity**         | Simple                | High (distributed systems)          |
+| **Failure Modes**      | Few, well-understood  | Many (split-brain, lock contention) |
+| **Horizontal Scaling** | Trivial (add workers) | Complex (rebalancing)               |
+| **Development Time**   | 1 week                | 3 weeks                             |
+| **Learning Curve**     | Low                   | High (distributed systems)          |
+| **Debugging**          | Easy (DB queries)     | Hard (distributed tracing)          |
 
 ---
 
