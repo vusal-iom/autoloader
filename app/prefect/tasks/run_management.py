@@ -3,7 +3,6 @@ Run record management tasks for Prefect flows.
 """
 from prefect import task, get_run_logger
 from typing import Dict
-from uuid import UUID
 from datetime import datetime
 import uuid
 
@@ -36,7 +35,7 @@ def create_run_record_task(ingestion_id: str, trigger: str = "scheduled") -> str
     try:
         # Get ingestion to fetch cluster_id
         ingestion_repo = IngestionRepository(db)
-        ingestion = ingestion_repo.get_by_id(UUID(ingestion_id))
+        ingestion = ingestion_repo.get_by_id(ingestion_id)
 
         if not ingestion:
             raise ValueError(f"Ingestion not found: {ingestion_id}")

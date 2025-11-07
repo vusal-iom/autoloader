@@ -153,7 +153,8 @@ class BatchFileProcessor:
 
         # Apply format options
         if self.ingestion.format_options:
-            for key, value in self.ingestion.format_options.items():
+            format_options = json.loads(self.ingestion.format_options) if isinstance(self.ingestion.format_options, str) else self.ingestion.format_options
+            for key, value in format_options.items():
                 reader = reader.option(key, value)
 
         return reader.load(file_path)
@@ -183,7 +184,8 @@ class BatchFileProcessor:
 
         # Apply format options
         if self.ingestion.format_options:
-            for key, value in self.ingestion.format_options.items():
+            format_options = json.loads(self.ingestion.format_options) if isinstance(self.ingestion.format_options, str) else self.ingestion.format_options
+            for key, value in format_options.items():
                 reader = reader.option(key, value)
 
         return reader.load(file_path)

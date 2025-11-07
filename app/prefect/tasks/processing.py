@@ -3,7 +3,6 @@ File processing tasks for Prefect flows.
 """
 from prefect import task, get_run_logger
 from typing import List, Dict
-from uuid import UUID
 
 from app.database import SessionLocal
 from app.repositories.ingestion_repository import IngestionRepository
@@ -43,7 +42,7 @@ def process_files_task(
     try:
         # Get ingestion config
         repo = IngestionRepository(db)
-        ingestion = repo.get_by_id(UUID(ingestion_id))
+        ingestion = repo.get_by_id(ingestion_id)
 
         if not ingestion:
             raise ValueError(f"Ingestion not found: {ingestion_id}")

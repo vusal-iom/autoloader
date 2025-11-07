@@ -3,7 +3,6 @@ File discovery tasks for Prefect flows.
 """
 from prefect import task, get_run_logger
 from typing import List, Dict
-from uuid import UUID
 import json
 
 from app.database import SessionLocal
@@ -34,7 +33,7 @@ def discover_files_task(ingestion_id: str) -> List[Dict]:
     try:
         # Get ingestion config
         repo = IngestionRepository(db)
-        ingestion = repo.get_by_id(UUID(ingestion_id))
+        ingestion = repo.get_by_id(ingestion_id)
 
         if not ingestion:
             raise ValueError(f"Ingestion not found: {ingestion_id}")

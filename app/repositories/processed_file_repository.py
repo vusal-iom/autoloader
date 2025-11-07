@@ -211,10 +211,8 @@ class ProcessedFileRepository:
             records_ingested: Number of records ingested
             bytes_read: Bytes read from file
         """
-        from datetime import timezone
-
         file_record.status = ProcessedFileStatus.SUCCESS.value
-        now = datetime.now(timezone.utc)
+        now = datetime.utcnow()
         file_record.processed_at = now
         file_record.records_ingested = records_ingested
         file_record.bytes_read = bytes_read
@@ -237,12 +235,10 @@ class ProcessedFileRepository:
             file_record: ProcessedFile instance
             error: Exception that caused failure
         """
-        from datetime import timezone
-
         file_record.status = ProcessedFileStatus.FAILED.value
         file_record.error_message = str(error)
         file_record.error_type = type(error).__name__
-        now = datetime.now(timezone.utc)
+        now = datetime.utcnow()
         file_record.processed_at = now
 
         if file_record.processing_started_at:
@@ -326,6 +322,14 @@ class ProcessedFileRepository:
         if 'size' in metadata:
             record.file_size_bytes = metadata['size']
         if 'modified_at' in metadata:
-            record.file_modified_at = metadata['modified_at']
+            modified_at = metadata['modified_at']
+            # Handle both string (ISO format) and datetime objects
+            if isinstance(modified_at, str):
+                # Parse ISO format string
+                modified_at = datetime.fromisoformat(modified_at.replace('Z', '+00:00'))
+            # Convert timezone-aware datetime to naive UTC datetime for SQLite compatibility
+            if modified_at.tzinfo is not None:
+                modified_at = modified_at.replace(tzinfo=None)
+            record.file_modified_at = modified_at
         if 'etag' in metadata:
             record.file_etag = metadata['etag']
