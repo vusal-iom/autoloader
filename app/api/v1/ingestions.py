@@ -41,9 +41,9 @@ async def create_ingestion(
     2. Generate checkpoint location
     3. Create Spark Connect session
     4. Save to database
-    5. Schedule if needed
+    5. Create Prefect deployment if scheduling enabled
     """
-    return service.create_ingestion(ingestion, current_user)
+    return await service.create_ingestion(ingestion, current_user)
 
 
 @router.get("", response_model=List[IngestionResponse])
@@ -95,7 +95,7 @@ async def update_ingestion(
     - Target table
     - File format
     """
-    ingestion = service.update_ingestion(ingestion_id, updates)
+    ingestion = await service.update_ingestion(ingestion_id, updates)
     if not ingestion:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -116,7 +116,7 @@ async def delete_ingestion(
     Query parameters:
     - delete_table: Also delete the target table (default: false)
     """
-    success = service.delete_ingestion(ingestion_id, delete_table)
+    success = await service.delete_ingestion(ingestion_id, delete_table)
     if not success:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -133,10 +133,10 @@ async def trigger_run(
     Manually trigger an ingestion run.
 
     Returns:
-        Run ID for tracking progress
+        Run information (either Prefect flow run ID or direct run ID)
     """
-    run = service.trigger_manual_run(ingestion_id)
-    return {"run_id": run.id, "status": "accepted"}
+    result = await service.trigger_manual_run(ingestion_id)
+    return result
 
 
 @router.post("/{ingestion_id}/pause", status_code=status.HTTP_200_OK)
@@ -145,7 +145,7 @@ async def pause_ingestion(
     service: IngestionService = Depends(get_ingestion_service),
 ):
     """Pause active ingestion (preserves checkpoint state)."""
-    success = service.pause_ingestion(ingestion_id)
+    success = await service.pause_ingestion(ingestion_id)
     if not success:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -160,7 +160,7 @@ async def resume_ingestion(
     service: IngestionService = Depends(get_ingestion_service),
 ):
     """Resume paused ingestion."""
-    success = service.resume_ingestion(ingestion_id)
+    success = await service.resume_ingestion(ingestion_id)
     if not success:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

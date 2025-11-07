@@ -2,6 +2,7 @@
 from sqlalchemy.orm import Session
 from typing import List, Optional
 import uuid
+import logging
 from datetime import datetime
 
 from app.models.domain import Ingestion, IngestionStatus, Run, RunStatus
@@ -17,8 +18,10 @@ from app.repositories.ingestion_repository import IngestionRepository
 from app.repositories.run_repository import RunRepository
 from app.services.spark_service import SparkService
 from app.services.cost_estimator import CostEstimator
+from app.services.prefect_service import get_prefect_service
 from app.config import get_settings, get_spark_connect_url
 
+logger = logging.getLogger(__name__)
 settings = get_settings()
 
 
@@ -32,7 +35,7 @@ class IngestionService:
         self.spark_service = SparkService()
         self.cost_estimator = CostEstimator()
 
-    def create_ingestion(self, data: IngestionCreate, user_id: str) -> IngestionResponse:
+    async def create_ingestion(self, data: IngestionCreate, user_id: str) -> IngestionResponse:
         """
         Create a new ingestion configuration.
 
@@ -41,7 +44,7 @@ class IngestionService:
         2. Generate IDs and paths
         3. Test Spark Connect connectivity
         4. Save to database
-        5. Schedule if needed
+        5. Create Prefect deployment if scheduling enabled
         """
         ingestion_id = f"ing_{uuid.uuid4().hex[:12]}"
         tenant_id = "tenant_123"  # TODO: Get from auth
@@ -100,8 +103,21 @@ class IngestionService:
         # Save to database
         ingestion = self.ingestion_repo.create(ingestion)
 
-        # Activate if not draft
-        # TODO: Schedule job if scheduled mode
+        # Create Prefect deployment if scheduling enabled
+        if ingestion.schedule_frequency:
+            try:
+                prefect = await get_prefect_service()
+                deployment_id = await prefect.create_deployment(ingestion)
+
+                # Store deployment ID
+                ingestion.prefect_deployment_id = deployment_id
+                self.db.commit()
+
+                logger.info(f"✅ Created Prefect deployment for ingestion {ingestion_id}")
+            except Exception as e:
+                logger.error(f"❌ Failed to create Prefect deployment: {e}")
+                logger.warning("Ingestion created but scheduling unavailable")
+                # Don't fail the request - ingestion can still be triggered manually
 
         return self._to_response(ingestion)
 
@@ -115,7 +131,7 @@ class IngestionService:
         ingestion = self.ingestion_repo.get_by_id(ingestion_id)
         return self._to_response(ingestion) if ingestion else None
 
-    def update_ingestion(
+    async def update_ingestion(
         self, ingestion_id: str, updates: IngestionUpdate
     ) -> Optional[IngestionResponse]:
         """Update ingestion configuration."""
@@ -123,12 +139,14 @@ class IngestionService:
         if not ingestion:
             return None
 
+        schedule_changed = False
+
         # Update allowed fields
         if updates.status:
             ingestion.status = updates.status
-            # TODO: Handle status-specific logic (start/stop scheduler, etc.)
 
         if updates.schedule:
+            schedule_changed = True
             ingestion.schedule_frequency = updates.schedule.frequency
             ingestion.schedule_time = updates.schedule.time
             ingestion.schedule_cron = updates.schedule.cron_expression
@@ -141,25 +159,59 @@ class IngestionService:
             ingestion.alert_recipients = updates.alert_recipients
 
         ingestion = self.ingestion_repo.update(ingestion)
+
+        # Update Prefect deployment schedule if changed
+        if schedule_changed and ingestion.prefect_deployment_id:
+            try:
+                prefect = await get_prefect_service()
+                await prefect.update_deployment_schedule(
+                    deployment_id=ingestion.prefect_deployment_id,
+                    schedule_frequency=ingestion.schedule_frequency,
+                    schedule_time=ingestion.schedule_time,
+                    schedule_cron=ingestion.schedule_cron,
+                    timezone=ingestion.schedule_timezone or "UTC"
+                )
+                logger.info(f"✅ Updated Prefect deployment schedule for ingestion {ingestion_id}")
+            except Exception as e:
+                logger.error(f"❌ Failed to update Prefect deployment: {e}")
+                # Don't fail the request - schedule update will be retried
+
         return self._to_response(ingestion)
 
-    def delete_ingestion(self, ingestion_id: str, delete_table: bool = False) -> bool:
+    async def delete_ingestion(self, ingestion_id: str, delete_table: bool = False) -> bool:
         """Delete an ingestion."""
-        # TODO: Stop scheduled job if exists
+        # Get ingestion to retrieve Prefect deployment ID
+        ingestion = self.ingestion_repo.get_by_id(ingestion_id)
+        if not ingestion:
+            return False
+
+        # Delete Prefect deployment first
+        if ingestion.prefect_deployment_id:
+            try:
+                prefect = await get_prefect_service()
+                await prefect.delete_deployment(ingestion.prefect_deployment_id)
+                logger.info(f"✅ Deleted Prefect deployment for ingestion {ingestion_id}")
+            except Exception as e:
+                logger.error(f"❌ Failed to delete Prefect deployment: {e}")
+                # Continue with ingestion deletion anyway
+
         # TODO: Cleanup checkpoints
         # TODO: Delete table if requested
 
         return self.ingestion_repo.delete(ingestion_id)
 
-    def trigger_manual_run(self, ingestion_id: str) -> Run:
+    async def trigger_manual_run(self, ingestion_id: str) -> dict:
         """
-        Trigger a manual ingestion run using batch processing.
+        Trigger a manual ingestion run.
+
+        If ingestion has a Prefect deployment, triggers via Prefect.
+        Otherwise, falls back to direct BatchOrchestrator execution.
 
         Args:
             ingestion_id: Ingestion ID
 
         Returns:
-            Run record
+            Dict with run information
 
         Raises:
             ValueError: If ingestion not found or not active
@@ -172,23 +224,76 @@ class IngestionService:
         if ingestion.status != IngestionStatus.ACTIVE and ingestion.status != IngestionStatus.DRAFT:
             raise ValueError(f"Ingestion not active: {ingestion.status}")
 
-        # Run batch ingestion via orchestrator
+        # Primary path: Trigger via Prefect deployment
+        if ingestion.prefect_deployment_id:
+            try:
+                prefect = await get_prefect_service()
+                flow_run_id = await prefect.trigger_deployment(
+                    deployment_id=ingestion.prefect_deployment_id,
+                    parameters={"ingestion_id": str(ingestion_id), "trigger": "manual"}
+                )
+
+                logger.info(f"✅ Triggered Prefect flow run {flow_run_id} for ingestion {ingestion_id}")
+
+                return {
+                    "status": "triggered",
+                    "method": "prefect",
+                    "flow_run_id": flow_run_id,
+                    "message": "Ingestion run triggered via Prefect"
+                }
+
+            except Exception as e:
+                logger.error(f"❌ Failed to trigger Prefect flow: {e}")
+                logger.warning("Falling back to direct orchestrator execution")
+                # Fall through to fallback path
+
+        # Fallback path: Direct BatchOrchestrator execution
+        logger.info(f"Triggering ingestion {ingestion_id} via BatchOrchestrator (fallback)")
         from app.services.batch_orchestrator import BatchOrchestrator
         orchestrator = BatchOrchestrator(self.db)
         run = orchestrator.run_ingestion(ingestion)
 
-        return run
+        return {
+            "status": "completed",
+            "method": "direct",
+            "run_id": run.id,
+            "message": "Ingestion run completed via direct execution"
+        }
 
-    def pause_ingestion(self, ingestion_id: str) -> bool:
+    async def pause_ingestion(self, ingestion_id: str) -> bool:
         """Pause an active ingestion (stops scheduler from triggering new runs)."""
+        ingestion = self.ingestion_repo.get_by_id(ingestion_id)
+        if not ingestion:
+            return False
+
+        # Pause Prefect deployment
+        if ingestion.prefect_deployment_id:
+            try:
+                prefect = await get_prefect_service()
+                await prefect.pause_deployment(ingestion.prefect_deployment_id)
+                logger.info(f"✅ Paused Prefect deployment for ingestion {ingestion_id}")
+            except Exception as e:
+                logger.error(f"❌ Failed to pause Prefect deployment: {e}")
+
         result = self.ingestion_repo.update_status(ingestion_id, IngestionStatus.PAUSED)
-        # TODO: Unregister scheduled job from scheduler
         return result is not None
 
-    def resume_ingestion(self, ingestion_id: str) -> bool:
+    async def resume_ingestion(self, ingestion_id: str) -> bool:
         """Resume a paused ingestion (re-registers with scheduler)."""
+        ingestion = self.ingestion_repo.get_by_id(ingestion_id)
+        if not ingestion:
+            return False
+
+        # Resume Prefect deployment
+        if ingestion.prefect_deployment_id:
+            try:
+                prefect = await get_prefect_service()
+                await prefect.resume_deployment(ingestion.prefect_deployment_id)
+                logger.info(f"✅ Resumed Prefect deployment for ingestion {ingestion_id}")
+            except Exception as e:
+                logger.error(f"❌ Failed to resume Prefect deployment: {e}")
+
         result = self.ingestion_repo.update_status(ingestion_id, IngestionStatus.ACTIVE)
-        # TODO: Re-register scheduled job with scheduler
         return result is not None
 
     def preview_ingestion(self, data: IngestionCreate) -> PreviewResult:

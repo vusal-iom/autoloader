@@ -1,4 +1,5 @@
 """Main FastAPI application."""
+import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -6,6 +7,7 @@ from app.config import get_settings
 from app.database import init_db
 from app.api.v1 import ingestions, runs, clusters, refresh
 
+logger = logging.getLogger(__name__)
 settings = get_settings()
 
 # Create FastAPI app
@@ -28,17 +30,33 @@ app.add_middleware(
 @app.on_event("startup")
 async def startup_event():
     """Initialize application on startup."""
+    logger.info("🚀 Starting IOMETE Autoloader")
+
     # Initialize database
     init_db()
-    # TODO: Initialize scheduler
+    logger.info("✅ Database initialized")
+
+    # Initialize Prefect service
+    try:
+        from app.services.prefect_service import get_prefect_service
+        prefect = await get_prefect_service()
+        if prefect.initialized:
+            logger.info("✅ Prefect service initialized and connected")
+        else:
+            logger.warning("⚠️  Prefect service initialized but not connected (will retry)")
+    except Exception as e:
+        logger.error(f"❌ Failed to initialize Prefect service: {e}")
+        logger.warning("Prefect features will be unavailable until connection is restored")
+
     # TODO: Initialize Spark Connect session pool
 
 
 @app.on_event("shutdown")
 async def shutdown_event():
     """Cleanup on shutdown."""
+    logger.info("🛑 Shutting down IOMETE Autoloader")
     # TODO: Close Spark Connect sessions
-    # TODO: Stop scheduler
+    # TODO: Cleanup Prefect connections
     pass
 
 
@@ -55,10 +73,19 @@ async def root():
 @app.get("/health")
 async def health():
     """Detailed health check."""
+    # Check Prefect connectivity
+    prefect_status = "unknown"
+    try:
+        from app.services.prefect_service import get_prefect_service_sync
+        prefect = get_prefect_service_sync()
+        prefect_status = "connected" if prefect.initialized else "disconnected"
+    except Exception:
+        prefect_status = "error"
+
     return {
         "status": "healthy",
         "database": "connected",  # TODO: Check database
-        "scheduler": "running",  # TODO: Check scheduler
+        "prefect": prefect_status,
     }
 
 
