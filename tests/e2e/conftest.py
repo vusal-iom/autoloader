@@ -246,3 +246,23 @@ def test_tenant_id() -> str:
 def test_cluster_id() -> str:
     """Get test cluster ID from environment."""
     return os.getenv("TEST_CLUSTER_ID", "test-cluster-001")
+
+
+@pytest.fixture(scope="function")
+def e2e_api_client_no_override(ensure_services_ready) -> Generator:
+    """
+    Create FastAPI test client WITHOUT database dependency override.
+
+    This is specifically for Prefect e2e tests where Prefect tasks create their own
+    database sessions via SessionLocal(), so we need real database commits.
+
+    Unlike the standard api_client fixture, this does NOT override get_db,
+    allowing both the API and Prefect tasks to use the same real database.
+    """
+    from fastapi.testclient import TestClient
+    from app.main import app
+
+    client = TestClient(app)
+    yield client
+
+    # No cleanup of overrides since we didn't set any

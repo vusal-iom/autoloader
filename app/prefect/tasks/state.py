@@ -3,7 +3,6 @@ File state management tasks for Prefect flows.
 """
 from prefect import task, get_run_logger
 from typing import List
-from uuid import UUID
 
 from app.database import SessionLocal
 from app.services.file_state_service import FileStateService
@@ -20,7 +19,7 @@ def check_file_state_task(ingestion_id: str) -> List[str]:
     Get list of already-processed file paths.
 
     Args:
-        ingestion_id: UUID of the ingestion
+        ingestion_id: ID of the ingestion (string format)
 
     Returns:
         List of processed file paths
@@ -31,7 +30,7 @@ def check_file_state_task(ingestion_id: str) -> List[str]:
     try:
         state_service = FileStateService(db)
         processed = state_service.get_processed_files(
-            ingestion_id=UUID(ingestion_id),
+            ingestion_id=ingestion_id,
             statuses=["SUCCESS", "SKIPPED"]
         )
 
