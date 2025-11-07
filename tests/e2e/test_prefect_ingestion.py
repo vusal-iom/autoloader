@@ -25,7 +25,6 @@ from typing import Dict
 from fastapi.testclient import TestClient
 from pyspark.sql import SparkSession
 
-from app.database import SessionLocal
 from app.prefect.flows.run_ingestion import run_ingestion_flow
 from tests.e2e.helpers import E2ELogger, create_standard_ingestion, get_run, assert_run_metrics, verify_table_data, \
     generate_unique_table_name, get_table_identifier, print_test_summary
@@ -78,26 +77,6 @@ class TestPrefectIngestion:
 
         ingestion_id = ingestion["id"]
 
-        # Cleanup: Delete ingestion at end of test
-        def cleanup_ingestion():
-            try:
-                db = SessionLocal()
-                try:
-                    from app.repositories.ingestion_repository import IngestionRepository
-                    repo = IngestionRepository(db)
-                    ingestion_obj = repo.get_by_id(ingestion_id)
-                    if ingestion_obj:
-                        db.delete(ingestion_obj)
-                        db.commit()
-                        logger.step(f"🧹 Cleaned up ingestion: {ingestion_id}")
-                finally:
-                    db.close()
-            except Exception as e:
-                logger.step(f"⚠️  Warning: Failed to cleanup ingestion {ingestion_id}: {e}")
-
-        import atexit
-        atexit.register(cleanup_ingestion)
-
         logger.success(f"Created ingestion: {ingestion_id}")
         logger.step(f"Source: {ingestion['source']['path']}")
         logger.step(f"Destination: {get_table_identifier(ingestion)}")
@@ -108,7 +87,10 @@ class TestPrefectIngestion:
 
         logger.phase("🚀 Running Prefect flow...")
 
-        # Run the Prefect flow directly (simulates scheduled execution)
+        # NOTE: This test intentionally deviates from the standard E2E pattern by calling
+        # run_ingestion_flow() directly instead of using the API trigger endpoint.
+        # This is necessary to test the Prefect flow execution path itself, which is used
+        # by the scheduler. The API endpoint is tested in test_basic_ingestion.py.
         result = run_ingestion_flow(
             ingestion_id=ingestion_id,
             trigger="manual"
