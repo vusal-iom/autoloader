@@ -249,7 +249,7 @@ def test_cluster_id() -> str:
 
 
 @pytest.fixture(scope="function")
-def e2e_api_client_no_override(ensure_services_ready) -> Generator:
+def e2e_api_client_no_override(ensure_services_ready, test_engine) -> Generator:
     """
     Create FastAPI test client WITHOUT database dependency override.
 
@@ -258,6 +258,8 @@ def e2e_api_client_no_override(ensure_services_ready) -> Generator:
 
     Unlike the standard api_client fixture, this does NOT override get_db,
     allowing both the API and Prefect tasks to use the same real database.
+
+    Depends on test_engine to ensure database tables are created before tests run.
     """
     from fastapi.testclient import TestClient
     from app.main import app

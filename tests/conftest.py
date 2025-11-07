@@ -31,7 +31,7 @@ def test_database_url() -> str:
     For unit tests, SQLite can be used.
     """
     return os.getenv(
-        "TEST_DATABASE_URL",
+        "DATABASE_URL",
         "postgresql://test_user:test_password@localhost:5432/autoloader_test"
     )
 
