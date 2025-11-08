@@ -78,8 +78,15 @@ def get_spark_connect_url(cluster_id: str) -> str:
     - Handle cluster not found errors
     - Support multiple environments (dev/staging/prod)
 
-    For now it returns local one
+    For now it returns local one, with environment variable override support
+    for container networking (e.g., Prefect worker needs spark-connect:15002)
     """
+    import os
+    # Allow override via environment variable for worker containers
+    override_url = os.getenv("SPARK_CONNECT_URL_OVERRIDE")
+    if override_url:
+        return override_url
+
     return "sc://localhost:15002"
 
 

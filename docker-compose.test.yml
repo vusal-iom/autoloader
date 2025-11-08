@@ -131,6 +131,7 @@ services:
       - AWS_SECRET_ACCESS_KEY=minioadmin
       # Spark Connect
       - SPARK_CONNECT_DEFAULT_PORT=15002
+      - SPARK_CONNECT_URL_OVERRIDE=sc://spark-connect:15002
       # Python path to find app modules
       - PYTHONPATH=/opt/prefect
     command:
@@ -138,7 +139,7 @@ services:
       - -c
       - |
         echo 'Installing application dependencies...'
-        pip install --quiet --no-cache-dir sqlalchemy==2.0.25 psycopg2-binary==2.9.9 "pydantic>=2.10.1,<3.0.0" pyspark==3.5.0 boto3==1.34.34 cryptography==41.0.7 python-dotenv==1.0.0 pydantic-settings pandas pyarrow
+        pip install --quiet --no-cache-dir sqlalchemy==2.0.25 psycopg2-binary==2.9.9 "pydantic>=2.10.1,<3.0.0" "pyspark[connect]==3.5.0" boto3==1.34.34 cryptography==41.0.7 python-dotenv==1.0.0 pydantic-settings
         echo 'Waiting for Prefect server to be ready...'
         sleep 10
         echo 'Creating work pool if it does not exist...'
