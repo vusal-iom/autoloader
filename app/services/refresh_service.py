@@ -33,7 +33,7 @@ class RefreshService:
         self.ingestion_service = ingestion_service or IngestionService(db)
         self.ingestion_repo = ingestion_repo or IngestionRepository(db)
 
-    def refresh(
+    async def refresh(
         self,
         ingestion_id: str,
         confirm: bool,
@@ -166,8 +166,8 @@ class RefreshService:
         # Step 3: Trigger run (if auto_run)
         if auto_run:
             try:
-                run = self.ingestion_service.trigger_manual_run(ingestion_id)
-                run_id = run.id
+                run = await self.ingestion_service.trigger_manual_run(ingestion_id)
+                run_id = run.get("run_id")
                 operations.append({
                     "operation": "run_triggered",
                     "status": "success",

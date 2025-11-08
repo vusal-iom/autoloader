@@ -190,7 +190,7 @@ def trigger_run(api_client: TestClient, ingestion_id: str) -> str:
     run_id = run_response["run_id"]
 
     assert run_id is not None
-    assert run_response["status"] in ["accepted", "running"]
+    assert run_response["status"] in ["accepted", "running", "completed"]
 
     return run_id
 

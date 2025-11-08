@@ -49,7 +49,7 @@ async def refresh_full(
     """Full refresh: reprocess all files."""
     try:
         logger.info(f"Full refresh requested for ingestion {ingestion_id}, dry_run={request.dry_run}")
-        result = refresh_service.refresh(
+        result = await refresh_service.refresh(
             ingestion_id=ingestion_id,
             confirm=request.confirm,
             mode="full",
@@ -103,7 +103,7 @@ async def refresh_new_only(
     """New-only refresh: process only new files."""
     try:
         logger.info(f"New-only refresh requested for ingestion {ingestion_id}, dry_run={request.dry_run}")
-        result = refresh_service.refresh(
+        result = await refresh_service.refresh(
             ingestion_id=ingestion_id,
             confirm=request.confirm,
             mode="new_only",
