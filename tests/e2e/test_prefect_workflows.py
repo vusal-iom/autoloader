@@ -116,16 +116,17 @@ class TestPrefectWorkflows:
             try:
                 deployment = await prefect_client.read_deployment(deployment_id)
                 logger.success(f"Deployment found: {deployment.name}")
-                logger.step(f"Schedule active: {deployment.is_schedule_active}")
+                has_active_schedule = any(s.active for s in deployment.schedules) if deployment.schedules else False
+                logger.step(f"Has active schedules: {has_active_schedule}")
                 logger.step(f"Paused: {deployment.paused}")
                 logger.step(f"Tags: {deployment.tags}")
 
                 assert deployment.name == f"ingestion-{ingestion_id}"
-                assert deployment.is_schedule_active is True
+                assert has_active_schedule is True, "Expected at least one active schedule"
                 assert deployment.paused is False
                 assert "autoloader" in deployment.tags
                 assert f"tenant-{test_tenant_id}" in deployment.tags or "tenant-tenant_123" in deployment.tags
-                assert deployment.schedule is not None, "Expected schedule to be set"
+                assert deployment.schedules, "Expected schedules to be set"
 
             except ObjectNotFound:
                 pytest.fail(f"Deployment {deployment_id} not found in Prefect server")
@@ -268,8 +269,8 @@ class TestPrefectWorkflows:
         # Verify deployment schedule updated in Prefect
         async with get_client() as prefect_client:
             deployment = await prefect_client.read_deployment(deployment_id)
-            logger.step(f"Prefect schedule: {deployment.schedule}")
-            assert deployment.schedule is not None, "Expected schedule to remain set"
+            logger.step(f"Prefect schedules: {deployment.schedules}")
+            assert deployment.schedules, "Expected schedules to remain set"
 
         # =============================================================================
         # Phase 8: Test pause/resume
@@ -406,11 +407,12 @@ class TestPrefectWorkflows:
 
         async with get_client() as prefect_client:
             deployment = await prefect_client.read_deployment(deployment_id)
+            has_active_schedule = any(s.active for s in deployment.schedules) if deployment.schedules else False
             logger.step(f"Deployment paused: {deployment.paused}")
-            logger.step(f"Schedule active: {deployment.is_schedule_active}")
+            logger.step(f"Has active schedules: {has_active_schedule}")
 
             assert deployment.paused is False, "Expected deployment to be active initially"
-            assert deployment.is_schedule_active is True
+            assert has_active_schedule is True, "Expected at least one active schedule"
 
         # =============================================================================
         # Phase 3: Pause ingestion

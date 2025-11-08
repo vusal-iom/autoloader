@@ -388,6 +388,7 @@ class IngestionService:
                 schema_version=ingestion.schema_version,
                 estimated_monthly_cost=ingestion.estimated_monthly_cost,
             ),
+            prefect_deployment_id=ingestion.prefect_deployment_id,
             created_at=ingestion.created_at,
             updated_at=ingestion.updated_at,
             created_by=ingestion.created_by,
