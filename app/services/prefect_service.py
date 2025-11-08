@@ -76,6 +76,7 @@ class PrefectService:
             async with get_client() as client:
                 # Import flow to register it
                 from app.prefect.flows.run_ingestion import run_ingestion_flow
+                from prefect.filesystems import LocalFileSystem
 
                 # Build schedule from ingestion configuration
                 schedule = self._build_schedule(ingestion)
@@ -96,6 +97,16 @@ class PrefectService:
                         )
                     )
 
+                # Create/get LocalFileSystem storage block for worker code
+                storage_block_name = "autoloader-code"
+                try:
+                    # Try to load existing block
+                    storage = await LocalFileSystem.load(storage_block_name)
+                except Exception:
+                    # Create new block if it doesn't exist
+                    storage = LocalFileSystem(basepath="/opt/prefect")
+                    await storage.save(storage_block_name, overwrite=True)
+
                 # Create deployment using client API
                 deployment_id = await client.create_deployment(
                     name=f"ingestion-{ingestion.id}",
@@ -111,7 +122,11 @@ class PrefectService:
                     ],
                     description=f"Autoloader ingestion: {ingestion.name}",
                     paused=False,
-                    # For Prefect 3.x, we set entrypoint to reference the flow function
+                    # Reference to storage block
+                    storage_document_id=storage._block_document_id,
+                    # Path within storage
+                    path=".",
+                    # Entrypoint relative to storage path
                     entrypoint="app/prefect/flows/run_ingestion.py:run_ingestion_flow",
                 )
 

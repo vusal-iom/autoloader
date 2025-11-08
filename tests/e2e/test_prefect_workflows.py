@@ -52,6 +52,7 @@ class TestPrefectWorkflows:
         e2e_api_client_no_override: TestClient,
         minio_client,
         minio_config: Dict[str, str],
+        minio_config_for_ingestion: Dict[str, str],
         test_bucket: str,
         lakehouse_bucket: str,
         sample_json_files: list,
@@ -87,7 +88,7 @@ class TestPrefectWorkflows:
             api_client=e2e_api_client_no_override,
             cluster_id=test_cluster_id,
             test_bucket=test_bucket,
-            minio_config=minio_config,
+            minio_config=minio_config_for_ingestion,  # Use worker-accessible endpoint
             table_name=table_name,
             name="E2E Prefect Lifecycle Test",
             schedule={
@@ -173,8 +174,7 @@ class TestPrefectWorkflows:
 
                     if state_name in ["Completed", "COMPLETED"]:
                         logger.success(f"Flow run completed successfully")
-                        # Extract run_id from flow run parameters
-                        run_id = flow_run.state_details.get("run_id") if flow_run.state_details else None
+                        # Run ID is created inside the flow, we'll fetch it from API
                         break
                     elif state_name in ["Failed", "FAILED", "Crashed", "CRASHED"]:
                         pytest.fail(f"Flow run failed with state: {state_name}")

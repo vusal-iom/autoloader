@@ -19,9 +19,29 @@ from pyspark.sql import SparkSession
 
 @pytest.fixture(scope="session")
 def minio_config() -> Dict[str, str]:
-    """MinIO configuration from environment."""
+    """
+    MinIO configuration for test client (running on host).
+
+    Uses localhost:9000 to connect from the test host machine.
+    """
     return {
         "endpoint_url": os.getenv("TEST_MINIO_ENDPOINT", "http://localhost:9000"),
+        "aws_access_key_id": os.getenv("TEST_MINIO_ACCESS_KEY", "minioadmin"),
+        "aws_secret_access_key": os.getenv("TEST_MINIO_SECRET_KEY", "minioadmin"),
+        "region_name": "us-east-1"
+    }
+
+
+@pytest.fixture(scope="session")
+def minio_config_for_ingestion() -> Dict[str, str]:
+    """
+    MinIO configuration for ingestion (stored in DB, used by worker).
+
+    Uses minio:9000 (Docker service name) for container-to-container communication.
+    This is what gets stored in the ingestion config and used by the Prefect worker.
+    """
+    return {
+        "endpoint_url": os.getenv("TEST_MINIO_ENDPOINT_FOR_WORKER", "http://minio:9000"),
         "aws_access_key_id": os.getenv("TEST_MINIO_ACCESS_KEY", "minioadmin"),
         "aws_secret_access_key": os.getenv("TEST_MINIO_SECRET_KEY", "minioadmin"),
         "region_name": "us-east-1"

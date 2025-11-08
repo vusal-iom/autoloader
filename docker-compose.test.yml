@@ -133,24 +133,18 @@ services:
       - SPARK_CONNECT_DEFAULT_PORT=15002
       # Python path to find app modules
       - PYTHONPATH=/opt/prefect
-    command: >
-      bash -c "
-      echo 'Installing application dependencies...' &&
-      pip install --quiet --no-cache-dir \
-        sqlalchemy==2.0.25 \
-        psycopg2-binary==2.9.9 \
-        pydantic==2.5.3 \
-        pyspark==3.5.0 \
-        boto3==1.34.34 \
-        cryptography==41.0.7 \
-        python-dotenv==1.0.0 &&
-      echo 'Waiting for Prefect server to be ready...' &&
-      sleep 10 &&
-      echo 'Creating work pool if it does not exist...' &&
-      prefect work-pool create default-work-pool --type process || true &&
-      echo 'Starting Prefect worker...' &&
-      prefect worker start --pool default-work-pool
-      "
+    command:
+      - bash
+      - -c
+      - |
+        echo 'Installing application dependencies...'
+        pip install --quiet --no-cache-dir sqlalchemy==2.0.25 psycopg2-binary==2.9.9 "pydantic>=2.10.1,<3.0.0" pyspark==3.5.0 boto3==1.34.34 cryptography==41.0.7 python-dotenv==1.0.0 pydantic-settings pandas pyarrow
+        echo 'Waiting for Prefect server to be ready...'
+        sleep 10
+        echo 'Creating work pool if it does not exist...'
+        prefect work-pool create default-work-pool --type process || true
+        echo 'Starting Prefect worker...'
+        prefect worker start --pool default-work-pool
     volumes:
       # Mount application code so worker can execute flows
       - ./app:/opt/prefect/app:ro
