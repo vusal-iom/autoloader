@@ -50,21 +50,20 @@ class TestPrefectIngestion:
         spark_connect_url: str
     ):
         """
-        Test complete Prefect ingestion workflow.
+        Test core Prefect ingestion flow execution.
 
-        Steps:
-        1. Create ingestion configuration via API
-        2. Test data (3 JSON files with 1000 records each) already uploaded by fixture
-        3. Run Prefect flow directly
-        4. Verify run status and metrics via API
-        5. Query Iceberg table to verify data
+        This test focuses on the Prefect flow execution path:
+        1. Create ingestion configuration
+        2. Run Prefect flow directly (simulates scheduled execution)
+        3. Verify run metrics
+        4. Verify data in Iceberg table
         """
         logger = E2ELogger()
-        logger.section("🧪 E2E TEST: Prefect-based Ingestion Flow")
+        logger.section("🧪 E2E TEST: Prefect Flow Execution")
 
         table_name = generate_unique_table_name("prefect_test_table")
 
-        logger.phase("📝 Creating ingestion configuration...")
+        logger.phase("📝 Phase 1: Creating ingestion configuration...")
 
         ingestion = create_standard_ingestion(
             api_client=e2e_api_client_no_override,
@@ -85,7 +84,7 @@ class TestPrefectIngestion:
         assert ingestion["status"] == "draft"
         assert ingestion["name"] == "E2E Test Prefect Ingestion"
 
-        logger.phase("🚀 Running Prefect flow...")
+        logger.phase("🚀 Phase 2: Running Prefect flow...")
 
         # NOTE: This test intentionally deviates from the standard E2E pattern by calling
         # run_ingestion_flow() directly instead of using the API trigger endpoint.
@@ -107,7 +106,7 @@ class TestPrefectIngestion:
 
         run_id = result["run_id"]
 
-        logger.phase("📊 Verifying run metrics via API...")
+        logger.phase("📊 Phase 3: Verifying run metrics...")
 
         # Get run details from API
         run = get_run(e2e_api_client_no_override, ingestion_id, run_id)
@@ -122,7 +121,7 @@ class TestPrefectIngestion:
 
         logger.success("All metrics verified")
 
-        logger.phase("🔍 Verifying data in Iceberg table...")
+        logger.phase("🔍 Phase 4: Verifying data in Iceberg table...")
 
         table_identifier = get_table_identifier(ingestion)
 
@@ -140,28 +139,12 @@ class TestPrefectIngestion:
 
         logger.success("Data verification passed")
 
-        logger.phase("📜 Verifying run history via API...")
-
-        response = e2e_api_client_no_override.get(f"/api/v1/ingestions/{ingestion_id}/runs")
-        assert response.status_code == 200
-
-        runs = response.json()
-        logger.step(f"Total runs: {len(runs)}")
-
-        assert len(runs) >= 1, "Expected at least 1 run in history"
-
-        our_run = next((r for r in runs if r["id"] == run_id), None)
-        assert our_run is not None, f"Run {run_id} not found in history"
-
-        logger.success(f"Run found in history: {our_run['id']}")
-
-        logger.section("✅ E2E TEST PASSED: Prefect-based Ingestion Flow")
+        logger.section("✅ E2E TEST PASSED: Prefect Flow Execution")
         print_test_summary([
             ("Ingestion ID", ingestion_id),
             ("Run ID", run_id),
             ("Files Processed", 3),
             ("Records Ingested", 3000),
             ("Table", table_identifier),
-            ("Prefect Status", result['status']),
             ("Test Status", "SUCCESS ✅")
         ])

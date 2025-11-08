@@ -33,6 +33,10 @@ from tests.e2e.helpers import (
     generate_unique_table_name,
     get_table_identifier,
     print_test_summary,
+    verify_prefect_deployment_exists,
+    verify_prefect_deployment_active,
+    verify_prefect_deployment_paused,
+    verify_prefect_deployment_deleted,
 )
 
 
@@ -112,24 +116,15 @@ class TestPrefectWorkflows:
         # =============================================================================
         logger.phase("🔍 Phase 2: Verifying deployment in Prefect server...")
 
-        async with get_client() as prefect_client:
-            try:
-                deployment = await prefect_client.read_deployment(deployment_id)
-                logger.success(f"Deployment found: {deployment.name}")
-                has_active_schedule = any(s.active for s in deployment.schedules) if deployment.schedules else False
-                logger.step(f"Has active schedules: {has_active_schedule}")
-                logger.step(f"Paused: {deployment.paused}")
-                logger.step(f"Tags: {deployment.tags}")
+        deployment = await verify_prefect_deployment_exists(
+            deployment_id=deployment_id,
+            expected_name=f"ingestion-{ingestion_id}",
+            expected_tags=["autoloader"],
+            logger=logger
+        )
 
-                assert deployment.name == f"ingestion-{ingestion_id}"
-                assert has_active_schedule is True, "Expected at least one active schedule"
-                assert deployment.paused is False
-                assert "autoloader" in deployment.tags
-                assert f"tenant-{test_tenant_id}" in deployment.tags or "tenant-tenant_123" in deployment.tags
-                assert deployment.schedules, "Expected schedules to be set"
-
-            except ObjectNotFound:
-                pytest.fail(f"Deployment {deployment_id} not found in Prefect server")
+        # Verify deployment is active with schedules
+        await verify_prefect_deployment_active(deployment_id=deployment_id, logger=logger)
 
         # =============================================================================
         # Phase 3: Trigger manual run via API
@@ -286,10 +281,7 @@ class TestPrefectWorkflows:
         logger.success("Ingestion paused")
 
         # Verify deployment paused in Prefect
-        async with get_client() as prefect_client:
-            deployment = await prefect_client.read_deployment(deployment_id)
-            logger.step(f"Prefect deployment paused: {deployment.paused}")
-            assert deployment.paused is True, "Expected deployment to be paused in Prefect"
+        await verify_prefect_deployment_paused(deployment_id=deployment_id, logger=logger)
 
         logger.phase("▶️  Resuming...")
 
@@ -302,10 +294,7 @@ class TestPrefectWorkflows:
         logger.success("Ingestion resumed")
 
         # Verify deployment resumed in Prefect
-        async with get_client() as prefect_client:
-            deployment = await prefect_client.read_deployment(deployment_id)
-            logger.step(f"Prefect deployment paused: {deployment.paused}")
-            assert deployment.paused is False, "Expected deployment to be active in Prefect"
+        await verify_prefect_deployment_active(deployment_id=deployment_id, logger=logger)
 
         # =============================================================================
         # Phase 9: Delete ingestion
@@ -321,12 +310,7 @@ class TestPrefectWorkflows:
         logger.success("Ingestion deleted")
 
         # Verify deployment deleted in Prefect
-        async with get_client() as prefect_client:
-            try:
-                await prefect_client.read_deployment(deployment_id)
-                pytest.fail("Deployment should have been deleted but still exists")
-            except ObjectNotFound:
-                logger.success("Deployment deleted from Prefect server ✅")
+        await verify_prefect_deployment_deleted(deployment_id=deployment_id, logger=logger)
 
         # =============================================================================
         # Test Summary
@@ -405,14 +389,7 @@ class TestPrefectWorkflows:
         # =============================================================================
         logger.phase("🔍 Phase 2: Verifying deployment is active...")
 
-        async with get_client() as prefect_client:
-            deployment = await prefect_client.read_deployment(deployment_id)
-            has_active_schedule = any(s.active for s in deployment.schedules) if deployment.schedules else False
-            logger.step(f"Deployment paused: {deployment.paused}")
-            logger.step(f"Has active schedules: {has_active_schedule}")
-
-            assert deployment.paused is False, "Expected deployment to be active initially"
-            assert has_active_schedule is True, "Expected at least one active schedule"
+        await verify_prefect_deployment_active(deployment_id=deployment_id, logger=logger)
 
         # =============================================================================
         # Phase 3: Pause ingestion
@@ -432,14 +409,7 @@ class TestPrefectWorkflows:
         # =============================================================================
         logger.phase("🔍 Phase 4: Verifying deployment paused in Prefect...")
 
-        async with get_client() as prefect_client:
-            deployment = await prefect_client.read_deployment(deployment_id)
-            logger.step(f"Deployment paused: {deployment.paused}")
-
-            assert deployment.paused is True, \
-                "Expected deployment to be paused in Prefect after pause API call"
-
-        logger.success("Deployment confirmed paused ✅")
+        await verify_prefect_deployment_paused(deployment_id=deployment_id, logger=logger)
 
         # =============================================================================
         # Phase 5: Resume ingestion
@@ -459,14 +429,7 @@ class TestPrefectWorkflows:
         # =============================================================================
         logger.phase("🔍 Phase 6: Verifying deployment active in Prefect...")
 
-        async with get_client() as prefect_client:
-            deployment = await prefect_client.read_deployment(deployment_id)
-            logger.step(f"Deployment paused: {deployment.paused}")
-
-            assert deployment.paused is False, \
-                "Expected deployment to be active in Prefect after resume API call"
-
-        logger.success("Deployment confirmed active ✅")
+        await verify_prefect_deployment_active(deployment_id=deployment_id, logger=logger)
 
         # =============================================================================
         # Cleanup

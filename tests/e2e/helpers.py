@@ -19,6 +19,8 @@ from typing import Dict, Any, List, Optional
 from datetime import datetime, timezone
 from fastapi.testclient import TestClient
 from pyspark.sql import SparkSession
+from prefect import get_client
+from prefect.exceptions import ObjectNotFound
 
 
 # =============================================================================
@@ -565,3 +567,138 @@ def print_test_summary(details: List[tuple], footer_message: Optional[str] = Non
         print(f"\n{footer_message}")
 
     print("="*80 + "\n")
+
+
+# =============================================================================
+# Prefect Deployment Verification Helpers
+# =============================================================================
+
+async def verify_prefect_deployment_exists(
+    deployment_id: str,
+    expected_name: Optional[str] = None,
+    expected_tags: Optional[List[str]] = None,
+    logger: Optional[E2ELogger] = None
+) -> Any:
+    """
+    Verify that a Prefect deployment exists and optionally check its properties.
+
+    Args:
+        deployment_id: Prefect deployment ID
+        expected_name: Expected deployment name (None to skip)
+        expected_tags: List of tags that must be present (None to skip)
+        logger: Optional logger for detailed output
+
+    Returns:
+        Deployment object from Prefect
+
+    Raises:
+        pytest.fail if deployment not found or properties don't match
+    """
+    async with get_client() as prefect_client:
+        try:
+            deployment = await prefect_client.read_deployment(deployment_id)
+
+            if logger:
+                logger.success(f"Deployment found: {deployment.name}")
+                logger.step(f"Paused: {deployment.paused}")
+                logger.step(f"Tags: {deployment.tags}")
+                has_active_schedule = any(s.active for s in deployment.schedules) if deployment.schedules else False
+                logger.step(f"Has active schedules: {has_active_schedule}")
+
+            # Verify name if provided
+            if expected_name is not None:
+                assert deployment.name == expected_name, \
+                    f"Expected deployment name '{expected_name}', got '{deployment.name}'"
+
+            # Verify tags if provided
+            if expected_tags:
+                for tag in expected_tags:
+                    assert tag in deployment.tags, \
+                        f"Expected tag '{tag}' not found in deployment tags: {deployment.tags}"
+
+            return deployment
+
+        except ObjectNotFound:
+            pytest.fail(f"Deployment {deployment_id} not found in Prefect server")
+
+
+async def verify_prefect_deployment_active(
+    deployment_id: str,
+    logger: Optional[E2ELogger] = None
+):
+    """
+    Verify that a Prefect deployment is active (not paused, has active schedules).
+
+    Args:
+        deployment_id: Prefect deployment ID
+        logger: Optional logger for detailed output
+
+    Raises:
+        AssertionError if deployment is paused or has no active schedules
+    """
+    async with get_client() as prefect_client:
+        deployment = await prefect_client.read_deployment(deployment_id)
+
+        has_active_schedule = any(s.active for s in deployment.schedules) if deployment.schedules else False
+
+        if logger:
+            logger.step(f"Deployment paused: {deployment.paused}")
+            logger.step(f"Has active schedules: {has_active_schedule}")
+
+        assert deployment.paused is False, \
+            f"Expected deployment to be active, but it is paused"
+        assert has_active_schedule is True, \
+            "Expected at least one active schedule"
+
+        if logger:
+            logger.success("Deployment is active ✅")
+
+
+async def verify_prefect_deployment_paused(
+    deployment_id: str,
+    logger: Optional[E2ELogger] = None
+):
+    """
+    Verify that a Prefect deployment is paused.
+
+    Args:
+        deployment_id: Prefect deployment ID
+        logger: Optional logger for detailed output
+
+    Raises:
+        AssertionError if deployment is not paused
+    """
+    async with get_client() as prefect_client:
+        deployment = await prefect_client.read_deployment(deployment_id)
+
+        if logger:
+            logger.step(f"Deployment paused: {deployment.paused}")
+
+        assert deployment.paused is True, \
+            f"Expected deployment to be paused, but it is active"
+
+        if logger:
+            logger.success("Deployment is paused ✅")
+
+
+async def verify_prefect_deployment_deleted(
+    deployment_id: str,
+    logger: Optional[E2ELogger] = None
+):
+    """
+    Verify that a Prefect deployment has been deleted.
+
+    Args:
+        deployment_id: Prefect deployment ID
+        logger: Optional logger for detailed output
+
+    Raises:
+        pytest.fail if deployment still exists
+    """
+    async with get_client() as prefect_client:
+        try:
+            await prefect_client.read_deployment(deployment_id)
+            pytest.fail(f"Deployment {deployment_id} should have been deleted but still exists")
+        except ObjectNotFound:
+            if logger:
+                logger.success("Deployment deleted from Prefect server ✅")
