@@ -41,6 +41,7 @@ setup-test:
 	@echo "PostgreSQL: localhost:5432 (test_user/test_password)"
 	@echo "Spark Connect: sc://localhost:15002"
 	@echo "Spark UI: http://localhost:4040"
+	@echo "Prefect UI: http://localhost:4200"
 	@echo ""
 	@echo "Run 'make test-spark-connect' to verify Spark connectivity"
 
