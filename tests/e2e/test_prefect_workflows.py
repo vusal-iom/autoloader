@@ -16,13 +16,13 @@ IMPORTANT: This test commits data to the real database (not using transactional 
 because Prefect tasks create their own database sessions via SessionLocal().
 """
 
-import pytest
 import time
 from typing import Dict
+
+import pytest
 from fastapi.testclient import TestClient
-from pyspark.sql import SparkSession
 from prefect import get_client
-from prefect.exceptions import ObjectNotFound
+from pyspark.sql import SparkSession
 
 from tests.e2e.helpers import (
     E2ELogger,
