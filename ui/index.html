@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IOMETE Autoloader - Dashboard</title>
+  <link rel="stylesheet" href="iomete-styles.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <!-- Header -->
+  <div class="header">
+    <div class="header-content">
+      <a href="index.html" class="logo">IOMETE Autoloader</a>
+      <nav class="nav">
+        <a href="index.html" class="active">Ingestions</a>
+        <a href="#" class="text-secondary">Settings</a>
+        <a href="#" class="text-secondary">Documentation</a>
+      </nav>
+    </div>
+  </div>
+
+  <!-- Main Content -->
+  <div class="container container-xl">
+    <!-- Breadcrumb -->
+    <div class="breadcrumb">
+      <a href="#">Home</a>
+      <span class="breadcrumb-separator">/</span>
+      <span>Ingestions</span>
+    </div>
+
+    <!-- Page Header -->
+    <div class="page-header">
+      <div class="page-title-section">
+        <h2>Data Ingestions</h2>
+        <p class="text-secondary">Manage your automated data ingestion pipelines</p>
+      </div>
+      <div>
+        <button class="btn btn-primary" onclick="window.location.href='wizard.html'">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <path d="M8 3V13M3 8H13" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+          Create Ingestion
+        </button>
+      </div>
+    </div>
+
+    <!-- Stats Grid -->
+    <div class="stats-grid" style="margin-bottom: 32px;">
+      <div class="stat-card">
+        <div class="stat-label">Total Ingestions</div>
+        <div class="stat-value">12</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Active Runs</div>
+        <div class="stat-value">3</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Success Rate</div>
+        <div class="stat-value">94.2%</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Data Processed Today</div>
+        <div class="stat-value">2.4 GB</div>
+      </div>
+    </div>
+
+    <!-- Toolbar -->
+    <div class="toolbar">
+      <div class="search-box">
+        <svg class="search-icon" width="16" height="16" viewBox="0 0 16 16" fill="none">
+          <path d="M7 12C9.76142 12 12 9.76142 12 7C12 4.23858 9.76142 2 7 2C4.23858 2 2 4.23858 2 7C2 9.76142 4.23858 12 7 12Z" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          <path d="M14 14L10.5 10.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+        <input type="text" placeholder="Search ingestions..." id="searchInput" oninput="filterTable()">
+      </div>
+      <div class="filters">
+        <select onchange="filterByStatus(this.value)" style="padding: 6px 12px; min-width: 120px;">
+          <option value="">All Status</option>
+          <option value="active">Active</option>
+          <option value="paused">Paused</option>
+          <option value="draft">Draft</option>
+          <option value="error">Error</option>
+        </select>
+        <select onchange="filterBySource(this.value)" style="padding: 6px 12px; min-width: 120px;">
+          <option value="">All Sources</option>
+          <option value="s3">AWS S3</option>
+          <option value="azure">Azure Blob</option>
+          <option value="gcs">GCS</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Ingestions Table -->
+    <div class="table-container">
+      <table id="ingestionsTable">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Source</th>
+            <th>Status</th>
+            <th>Schedule</th>
+            <th>Last Run</th>
+            <th>Next Run</th>
+            <th style="text-align: center;">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>
+              <div class="flex flex-col gap-1">
+                <a href="detail.html" style="color: var(--color-lake-500); text-decoration: none; font-weight: 500;">AWS Marketing Data</a>
+                <span class="text-xs text-secondary">marketing_events → marketing.events</span>
+              </div>
+            </td>
+            <td>
+              <div class="flex items-center gap-2">
+                <div style="width: 24px; height: 24px; background: var(--color-stone-100); border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 10px;">S3</div>
+                <span>AWS S3</span>
+              </div>
+            </td>
+            <td><span class="tag tag-active">Active</span></td>
+            <td class="text-sm">Hourly</td>
+            <td class="text-sm text-secondary">2 min ago</td>
+            <td class="text-sm text-secondary">in 58 min</td>
+            <td style="text-align: center;">
+              <button class="btn btn-text btn-small">View</button>
+              <button class="btn btn-text btn-small" onclick="toggleModal('pauseModal')">Pause</button>
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <div class="flex flex-col gap-1">
+                <a href="detail.html" style="color: var(--color-lake-500); text-decoration: none; font-weight: 500;">Azure Analytics Logs</a>
+                <span class="text-xs text-secondary">analytics_logs → analytics.logs</span>
+              </div>
+            </td>
+            <td>
+              <div class="flex items-center gap-2">
+                <div style="width: 24px; height: 24px; background: var(--color-lake-100); border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 10px;">AZ</div>
+                <span>Azure Blob</span>
+              </div>
+            </td>
+            <td><span class="tag tag-running">Running</span></td>
+            <td class="text-sm">Daily at 2:00 AM</td>
+            <td class="text-sm text-secondary">Running...</td>
+            <td class="text-sm text-secondary">Tomorrow 2:00 AM</td>
+            <td style="text-align: center;">
+              <button class="btn btn-text btn-small">View</button>
+              <button class="btn btn-text btn-small">Logs</button>
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <div class="flex flex-col gap-1">
+                <a href="detail.html" style="color: var(--color-lake-500); text-decoration: none; font-weight: 500;">GCS User Activity</a>
+                <span class="text-xs text-secondary">user_activity → users.activity</span>
+              </div>
+            </td>
+            <td>
+              <div class="flex items-center gap-2">
+                <div style="width: 24px; height: 24px; background: var(--color-racing-100); border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 10px;">GC</div>
+                <span>GCS</span>
+              </div>
+            </td>
+            <td><span class="tag tag-paused">Paused</span></td>
+            <td class="text-sm">Every 6 hours</td>
+            <td class="text-sm text-secondary">3 hours ago</td>
+            <td class="text-sm text-secondary">-</td>
+            <td style="text-align: center;">
+              <button class="btn btn-text btn-small">View</button>
+              <button class="btn btn-text btn-small" style="color: var(--color-racing-500);">Resume</button>
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <div class="flex flex-col gap-1">
+                <a href="detail.html" style="color: var(--color-lake-500); text-decoration: none; font-weight: 500;">S3 Transaction Data</a>
+                <span class="text-xs text-secondary">transactions → finance.transactions</span>
+              </div>
+            </td>
+            <td>
+              <div class="flex items-center gap-2">
+                <div style="width: 24px; height: 24px; background: var(--color-stone-100); border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 10px;">S3</div>
+                <span>AWS S3</span>
+              </div>
+            </td>
+            <td><span class="tag tag-active">Active</span></td>
+            <td class="text-sm">Daily at 1:00 AM</td>
+            <td class="text-sm text-secondary">23 hours ago</td>
+            <td class="text-sm text-secondary">in 1 hour</td>
+            <td style="text-align: center;">
+              <button class="btn btn-text btn-small">View</button>
+              <button class="btn btn-text btn-small">Edit</button>
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <div class="flex flex-col gap-1">
+                <a href="detail.html" style="color: var(--color-lake-500); text-decoration: none; font-weight: 500;">Snyk Security Scan Results</a>
+                <span class="text-xs text-secondary">snyk_results → security.scans</span>
+              </div>
+            </td>
+            <td>
+              <div class="flex items-center gap-2">
+                <div style="width: 24px; height: 24px; background: var(--color-stone-100); border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 10px;">S3</div>
+                <span>AWS S3</span>
+              </div>
+            </td>
+            <td><span class="tag tag-failed">Failed</span></td>
+            <td class="text-sm">Daily at 6:00 AM</td>
+            <td class="text-sm" style="color: var(--color-error);">Failed 18 hours ago</td>
+            <td class="text-sm text-secondary">in 6 hours</td>
+            <td style="text-align: center;">
+              <button class="btn btn-text btn-small">View</button>
+              <button class="btn btn-text btn-small" style="color: var(--color-error);">Retry</button>
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <div class="flex flex-col gap-1">
+                <a href="detail.html" style="color: var(--color-lake-500); text-decoration: none; font-weight: 500;">Product Catalog Import</a>
+                <span class="text-xs text-secondary">products → catalog.products</span>
+              </div>
+            </td>
+            <td>
+              <div class="flex items-center gap-2">
+                <div style="width: 24px; height: 24px; background: var(--color-lake-100); border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 10px;">AZ</div>
+                <span>Azure Blob</span>
+              </div>
+            </td>
+            <td><span class="tag tag-draft">Draft</span></td>
+            <td class="text-sm text-secondary">Not scheduled</td>
+            <td class="text-sm text-secondary">Never</td>
+            <td class="text-sm text-secondary">-</td>
+            <td style="text-align: center;">
+              <button class="btn btn-text btn-small">Edit</button>
+              <button class="btn btn-text btn-small" style="color: var(--color-success);">Activate</button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Pagination -->
+    <div class="flex justify-between items-center" style="margin-top: 16px;">
+      <div class="text-sm text-secondary">
+        Showing 1-6 of 12 ingestions
+      </div>
+      <div class="flex gap-1">
+        <button class="btn btn-secondary btn-small" disabled>Previous</button>
+        <button class="btn btn-primary btn-small">Next</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Pause Confirmation Modal -->
+  <div class="modal-overlay" id="pauseModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h5 class="modal-title">Pause Ingestion?</h5>
+      </div>
+      <p class="text-secondary">This will pause the scheduled runs for this ingestion. You can resume it at any time.</p>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="toggleModal('pauseModal')">Cancel</button>
+        <button class="btn btn-primary">Pause Ingestion</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Modal toggle
+    function toggleModal(modalId) {
+      const modal = document.getElementById(modalId);
+      modal.classList.toggle('active');
+    }
+
+    // Close modal on overlay click
+    document.querySelectorAll('.modal-overlay').forEach(overlay => {
+      overlay.addEventListener('click', function(e) {
+        if (e.target === overlay) {
+          overlay.classList.remove('active');
+        }
+      });
+    });
+
+    // Simple table filter
+    function filterTable() {
+      const searchValue = document.getElementById('searchInput').value.toLowerCase();
+      const table = document.getElementById('ingestionsTable');
+      const rows = table.getElementsByTagName('tr');
+
+      for (let i = 1; i < rows.length; i++) {
+        const row = rows[i];
+        const text = row.textContent.toLowerCase();
+        row.style.display = text.includes(searchValue) ? '' : 'none';
+      }
+    }
+
+    // Filter by status
+    let currentStatusFilter = '';
+    let currentSourceFilter = '';
+
+    function filterByStatus(status) {
+      currentStatusFilter = status.toLowerCase();
+      applyFilters();
+    }
+
+    function filterBySource(source) {
+      currentSourceFilter = source.toLowerCase();
+      applyFilters();
+    }
+
+    function applyFilters() {
+      const table = document.getElementById('ingestionsTable');
+      const rows = table.getElementsByTagName('tr');
+
+      for (let i = 1; i < rows.length; i++) {
+        const row = rows[i];
+        const statusCell = row.cells[2];
+        const sourceCell = row.cells[1];
+
+        let showRow = true;
+
+        if (currentStatusFilter && !statusCell.textContent.toLowerCase().includes(currentStatusFilter)) {
+          showRow = false;
+        }
+
+        if (currentSourceFilter && !sourceCell.textContent.toLowerCase().includes(currentSourceFilter)) {
+          showRow = false;
+        }
+
+        row.style.display = showRow ? '' : 'none';
+      }
+    }
+  </script>
+</body>
+</html>

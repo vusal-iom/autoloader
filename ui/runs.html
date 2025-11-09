@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Run History - AWS Marketing Data - IOMETE Autoloader</title>
+  <link rel="stylesheet" href="iomete-styles.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;700&display=swap" rel="stylesheet">
+  <style>
+    .timeline {
+      position: relative;
+      padding-left: 40px;
+    }
+
+    .timeline::before {
+      content: '';
+      position: absolute;
+      left: 16px;
+      top: 0;
+      bottom: 0;
+      width: 2px;
+      background: var(--color-border-secondary);
+    }
+
+    .timeline-item {
+      position: relative;
+      padding-bottom: 32px;
+    }
+
+    .timeline-dot {
+      position: absolute;
+      left: -32px;
+      top: 0;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      font-weight: 500;
+    }
+
+    .timeline-dot.success {
+      background: var(--color-racing-500);
+      color: white;
+    }
+
+    .timeline-dot.failed {
+      background: var(--color-error);
+      color: white;
+    }
+
+    .timeline-dot.running {
+      background: var(--color-lake-500);
+      color: white;
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.6; }
+    }
+
+    .log-viewer {
+      background: #1a1a1a;
+      color: #e0e0e0;
+      padding: 16px;
+      border-radius: 6px;
+      font-family: 'Courier New', monospace;
+      font-size: 12px;
+      line-height: 1.6;
+      overflow-x: auto;
+      max-height: 400px;
+      overflow-y: auto;
+    }
+
+    .log-line {
+      white-space: pre;
+    }
+
+    .log-info { color: #4fc3f7; }
+    .log-warn { color: #ffb74d; }
+    .log-error { color: #ef5350; }
+    .log-success { color: #66bb6a; }
+  </style>
+</head>
+<body>
+  <!-- Header -->
+  <div class="header">
+    <div class="header-content">
+      <a href="index.html" class="logo">IOMETE Autoloader</a>
+      <nav class="nav">
+        <a href="index.html">Ingestions</a>
+        <a href="#" class="text-secondary">Settings</a>
+        <a href="#" class="text-secondary">Documentation</a>
+      </nav>
+    </div>
+  </div>
+
+  <!-- Main Content -->
+  <div class="container container-xl">
+    <!-- Breadcrumb -->
+    <div class="breadcrumb">
+      <a href="index.html">Ingestions</a>
+      <span class="breadcrumb-separator">/</span>
+      <a href="detail.html">AWS Marketing Data</a>
+      <span class="breadcrumb-separator">/</span>
+      <span>Run History</span>
+    </div>
+
+    <!-- Page Header -->
+    <div class="page-header">
+      <div class="page-title-section">
+        <h2>Run History</h2>
+        <p class="text-secondary">Execution history for AWS Marketing Data ingestion</p>
+      </div>
+      <div class="flex gap-2">
+        <button class="btn btn-secondary">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <path d="M8 2V8L12 10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            <path d="M14 8C14 11.3137 11.3137 14 8 14C4.68629 14 2 11.3137 2 8C2 4.68629 4.68629 2 8 2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+          Download Logs
+        </button>
+        <button class="btn btn-primary">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <path d="M13.6 8.8C13.2 11.6 10.8 13.6 8 13.6C4.8 13.6 2.4 11.2 2.4 8C2.4 4.8 4.8 2.4 8 2.4C10 2.4 11.6 3.6 12.4 5.2M13.6 2.4V5.6H10.4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          Refresh
+        </button>
+      </div>
+    </div>
+
+    <!-- Metrics Summary -->
+    <div class="stats-grid" style="margin-bottom: 32px;">
+      <div class="stat-card">
+        <div class="stat-label">Total Runs</div>
+        <div class="stat-value">1,247</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Success Rate</div>
+        <div class="stat-value" style="color: var(--color-racing-500);">98.4%</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Avg. Duration</div>
+        <div class="stat-value">2m 38s</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Total Records</div>
+        <div class="stat-value">15.2M</div>
+      </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="toolbar">
+      <div class="search-box">
+        <svg class="search-icon" width="16" height="16" viewBox="0 0 16 16" fill="none">
+          <path d="M7 12C9.76142 12 12 9.76142 12 7C12 4.23858 9.76142 2 7 2C4.23858 2 2 4.23858 2 7C2 9.76142 4.23858 12 7 12Z" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          <path d="M14 14L10.5 10.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+        <input type="text" placeholder="Search by run ID...">
+      </div>
+      <div class="filters">
+        <select style="padding: 6px 12px; min-width: 140px;">
+          <option value="">All Status</option>
+          <option value="completed">Completed</option>
+          <option value="running">Running</option>
+          <option value="failed">Failed</option>
+          <option value="cancelled">Cancelled</option>
+        </select>
+        <input type="date" style="padding: 6px 12px;">
+      </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: 1fr 400px; gap: 24px;">
+      <!-- Left: Runs Table -->
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>Run ID</th>
+              <th>Status</th>
+              <th>Started</th>
+              <th>Duration</th>
+              <th>Files</th>
+              <th>Records</th>
+              <th style="text-align: center;">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr onclick="showRunDetails(1247)" style="cursor: pointer;">
+              <td class="text-sm"><strong>#1247</strong></td>
+              <td><span class="tag tag-completed">Completed</span></td>
+              <td class="text-sm text-secondary">2 min ago</td>
+              <td class="text-sm">2m 34s</td>
+              <td class="text-sm">43</td>
+              <td class="text-sm">12,456</td>
+              <td style="text-align: center;">
+                <button class="btn btn-text btn-small">View Logs</button>
+              </td>
+            </tr>
+            <tr onclick="showRunDetails(1246)" style="cursor: pointer;">
+              <td class="text-sm"><strong>#1246</strong></td>
+              <td><span class="tag tag-completed">Completed</span></td>
+              <td class="text-sm text-secondary">1 hour ago</td>
+              <td class="text-sm">2m 41s</td>
+              <td class="text-sm">41</td>
+              <td class="text-sm">11,892</td>
+              <td style="text-align: center;">
+                <button class="btn btn-text btn-small">View Logs</button>
+              </td>
+            </tr>
+            <tr onclick="showRunDetails(1245)" style="cursor: pointer;">
+              <td class="text-sm"><strong>#1245</strong></td>
+              <td><span class="tag tag-completed">Completed</span></td>
+              <td class="text-sm text-secondary">2 hours ago</td>
+              <td class="text-sm">2m 28s</td>
+              <td class="text-sm">45</td>
+              <td class="text-sm">13,234</td>
+              <td style="text-align: center;">
+                <button class="btn btn-text btn-small">View Logs</button>
+              </td>
+            </tr>
+            <tr onclick="showRunDetails(1244)" style="cursor: pointer;">
+              <td class="text-sm"><strong>#1244</strong></td>
+              <td><span class="tag tag-completed">Completed</span></td>
+              <td class="text-sm text-secondary">3 hours ago</td>
+              <td class="text-sm">2m 45s</td>
+              <td class="text-sm">42</td>
+              <td class="text-sm">12,678</td>
+              <td style="text-align: center;">
+                <button class="btn btn-text btn-small">View Logs</button>
+              </td>
+            </tr>
+            <tr onclick="showRunDetails(1243)" style="cursor: pointer; background: var(--color-reef-50);">
+              <td class="text-sm"><strong>#1243</strong></td>
+              <td><span class="tag tag-failed">Failed</span></td>
+              <td class="text-sm text-secondary">4 hours ago</td>
+              <td class="text-sm">0m 45s</td>
+              <td class="text-sm">-</td>
+              <td class="text-sm">-</td>
+              <td style="text-align: center;">
+                <button class="btn btn-text btn-small" style="color: var(--color-success);">Retry</button>
+              </td>
+            </tr>
+            <tr onclick="showRunDetails(1242)" style="cursor: pointer;">
+              <td class="text-sm"><strong>#1242</strong></td>
+              <td><span class="tag tag-completed">Completed</span></td>
+              <td class="text-sm text-secondary">5 hours ago</td>
+              <td class="text-sm">2m 38s</td>
+              <td class="text-sm">44</td>
+              <td class="text-sm">12,991</td>
+              <td style="text-align: center;">
+                <button class="btn btn-text btn-small">View Logs</button>
+              </td>
+            </tr>
+            <tr onclick="showRunDetails(1241)" style="cursor: pointer;">
+              <td class="text-sm"><strong>#1241</strong></td>
+              <td><span class="tag tag-completed">Completed</span></td>
+              <td class="text-sm text-secondary">6 hours ago</td>
+              <td class="text-sm">2m 32s</td>
+              <td class="text-sm">40</td>
+              <td class="text-sm">11,445</td>
+              <td style="text-align: center;">
+                <button class="btn btn-text btn-small">View Logs</button>
+              </td>
+            </tr>
+            <tr onclick="showRunDetails(1240)" style="cursor: pointer;">
+              <td class="text-sm"><strong>#1240</strong></td>
+              <td><span class="tag tag-completed">Completed</span></td>
+              <td class="text-sm text-secondary">7 hours ago</td>
+              <td class="text-sm">2m 29s</td>
+              <td class="text-sm">42</td>
+              <td class="text-sm">12,223</td>
+              <td style="text-align: center;">
+                <button class="btn btn-text btn-small">View Logs</button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Right: Run Details Panel -->
+      <div class="card" id="run-details-panel" style="position: sticky; top: 16px; max-height: calc(100vh - 32px); overflow-y: auto;">
+        <h4 style="margin-bottom: 16px;">Run #1247 Details</h4>
+
+        <!-- Status Banner -->
+        <div style="padding: 16px; background: var(--color-racing-50); border-radius: 6px; border: 1px solid var(--color-racing-300); margin-bottom: 20px;">
+          <div class="flex items-center gap-3">
+            <div style="width: 40px; height: 40px; background: var(--color-racing-500); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-size: 20px;">
+              ✓
+            </div>
+            <div>
+              <div style="font-weight: 500;">Completed Successfully</div>
+              <div class="text-sm text-secondary">Nov 9, 2025 at 11:02 AM UTC</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Metrics -->
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px;">
+          <div>
+            <div class="text-xs text-secondary">Duration</div>
+            <div style="font-weight: 500; margin-top: 4px;">2m 34s</div>
+          </div>
+          <div>
+            <div class="text-xs text-secondary">Files Processed</div>
+            <div style="font-weight: 500; margin-top: 4px;">43</div>
+          </div>
+          <div>
+            <div class="text-xs text-secondary">Records Added</div>
+            <div style="font-weight: 500; margin-top: 4px;">12,456</div>
+          </div>
+          <div>
+            <div class="text-xs text-secondary">Data Size</div>
+            <div style="font-weight: 500; margin-top: 4px;">284.5 MB</div>
+          </div>
+        </div>
+
+        <!-- Timeline -->
+        <h5 style="margin-bottom: 16px;">Execution Timeline</h5>
+        <div class="timeline">
+          <div class="timeline-item">
+            <div class="timeline-dot success">1</div>
+            <div>
+              <div style="font-weight: 500; margin-bottom: 4px;">Started</div>
+              <div class="text-sm text-secondary">11:02:15 AM</div>
+            </div>
+          </div>
+          <div class="timeline-item">
+            <div class="timeline-dot success">2</div>
+            <div>
+              <div style="font-weight: 500; margin-bottom: 4px;">Discovered Files</div>
+              <div class="text-sm text-secondary">11:02:18 AM • 43 files found</div>
+            </div>
+          </div>
+          <div class="timeline-item">
+            <div class="timeline-dot success">3</div>
+            <div>
+              <div style="font-weight: 500; margin-bottom: 4px;">Processing Data</div>
+              <div class="text-sm text-secondary">11:02:20 AM • Reading and transforming</div>
+            </div>
+          </div>
+          <div class="timeline-item">
+            <div class="timeline-dot success">4</div>
+            <div>
+              <div style="font-weight: 500; margin-bottom: 4px;">Writing to Table</div>
+              <div class="text-sm text-secondary">11:03:45 AM • 12,456 records</div>
+            </div>
+          </div>
+          <div class="timeline-item" style="padding-bottom: 0;">
+            <div class="timeline-dot success">✓</div>
+            <div>
+              <div style="font-weight: 500; margin-bottom: 4px;">Completed</div>
+              <div class="text-sm text-secondary">11:04:49 AM</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Logs Section -->
+        <div style="margin-top: 24px;">
+          <div class="flex justify-between items-center" style="margin-bottom: 12px;">
+            <h5>Execution Logs</h5>
+            <button class="btn btn-text btn-small">Download</button>
+          </div>
+
+          <div class="log-viewer">
+<span class="log-line log-info">[2025-11-09 11:02:15] INFO: Starting ingestion run #1247</span>
+<span class="log-line log-info">[2025-11-09 11:02:16] INFO: Connecting to S3 bucket: marketing-data-prod</span>
+<span class="log-line log-info">[2025-11-09 11:02:18] INFO: Discovered 43 new files in path: data/events/</span>
+<span class="log-line log-info">[2025-11-09 11:02:20] INFO: Starting Spark job for file processing</span>
+<span class="log-line log-info">[2025-11-09 11:02:25] INFO: Reading JSON files with schema inference</span>
+<span class="log-line log-info">[2025-11-09 11:03:45] INFO: Processed 12,456 records (284.5 MB)</span>
+<span class="log-line log-info">[2025-11-09 11:03:48] INFO: Writing data to Iceberg table: marketing.events</span>
+<span class="log-line log-info">[2025-11-09 11:04:45] INFO: Data written successfully</span>
+<span class="log-line log-info">[2025-11-09 11:04:48] INFO: Updating file state tracker</span>
+<span class="log-line log-success">[2025-11-09 11:04:49] SUCCESS: Ingestion completed successfully</span>
+<span class="log-line log-info">[2025-11-09 11:04:49] INFO: Total duration: 2m 34s</span>
+          </div>
+        </div>
+
+        <!-- Actions -->
+        <div class="flex gap-2" style="margin-top: 20px;">
+          <button class="btn btn-secondary w-full">View in Spark UI</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Pagination -->
+    <div class="flex justify-between items-center" style="margin-top: 24px; margin-bottom: 48px;">
+      <div class="text-sm text-secondary">
+        Showing 1-8 of 1,247 runs
+      </div>
+      <div class="flex gap-1">
+        <button class="btn btn-secondary btn-small" disabled>Previous</button>
+        <button class="btn btn-secondary btn-small">1</button>
+        <button class="btn btn-primary btn-small">2</button>
+        <button class="btn btn-secondary btn-small">3</button>
+        <span style="padding: 0 8px; display: flex; align-items: center;">...</span>
+        <button class="btn btn-secondary btn-small">157</button>
+        <button class="btn btn-secondary btn-small">Next</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function showRunDetails(runId) {
+      // In a real app, this would fetch and display the details for the selected run
+      console.log('Showing details for run:', runId);
+
+      // Highlight selected row
+      document.querySelectorAll('tbody tr').forEach(row => {
+        row.style.borderLeft = 'none';
+      });
+      event.currentTarget.style.borderLeft = '3px solid var(--color-lake-500)';
+    }
+  </script>
+</body>
+</html>

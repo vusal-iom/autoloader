@@ -3,6 +3,9 @@
 ## Overview
 This document outlines the high-level UI elements needed for the IOMETE Autoloader, a zero-code data ingestion system.
 
+Important: Only design just plain html. I need to see the UI that can run as plan html on
+my local.
+
 ---
 
 ## 1. Main Dashboard / Ingestions List

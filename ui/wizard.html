@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Create Ingestion - IOMETE Autoloader</title>
+  <link rel="stylesheet" href="iomete-styles.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <!-- Header -->
+  <div class="header">
+    <div class="header-content">
+      <a href="index.html" class="logo">IOMETE Autoloader</a>
+      <nav class="nav">
+        <a href="index.html">Ingestions</a>
+        <a href="#" class="text-secondary">Settings</a>
+        <a href="#" class="text-secondary">Documentation</a>
+      </nav>
+    </div>
+  </div>
+
+  <!-- Main Content -->
+  <div class="container container-lg" style="margin-bottom: 48px;">
+    <!-- Breadcrumb -->
+    <div class="breadcrumb">
+      <a href="index.html">Ingestions</a>
+      <span class="breadcrumb-separator">/</span>
+      <span>Create New Ingestion</span>
+    </div>
+
+    <!-- Wizard -->
+    <div class="wizard">
+      <!-- Wizard Steps -->
+      <div class="wizard-steps">
+        <div class="wizard-step active" id="step-indicator-1">
+          <div class="step-number">1</div>
+          <div class="step-label">Basic Info</div>
+        </div>
+        <div class="wizard-step" id="step-indicator-2">
+          <div class="step-number">2</div>
+          <div class="step-label">Source</div>
+        </div>
+        <div class="wizard-step" id="step-indicator-3">
+          <div class="step-number">3</div>
+          <div class="step-label">Destination</div>
+        </div>
+        <div class="wizard-step" id="step-indicator-4">
+          <div class="step-number">4</div>
+          <div class="step-label">Schedule</div>
+        </div>
+        <div class="wizard-step" id="step-indicator-5">
+          <div class="step-number">5</div>
+          <div class="step-label">Advanced</div>
+        </div>
+        <div class="wizard-step" id="step-indicator-6">
+          <div class="step-number">6</div>
+          <div class="step-label">Review</div>
+        </div>
+      </div>
+
+      <!-- Wizard Content -->
+      <div class="wizard-content">
+        <!-- Step 1: Basic Information -->
+        <div class="wizard-step-content" id="step-1">
+          <h3 style="margin-bottom: 8px;">Basic Information</h3>
+          <p class="text-secondary mb-4">Provide a name and description for your ingestion</p>
+
+          <div class="form-group">
+            <label for="ingestion-name">Ingestion Name *</label>
+            <input type="text" id="ingestion-name" placeholder="e.g., AWS Marketing Data" required>
+            <span class="text-xs text-secondary mt-2" style="display: block;">Use a descriptive name to identify this ingestion</span>
+          </div>
+
+          <div class="form-group">
+            <label for="description">Description</label>
+            <textarea id="description" placeholder="Optional description of what this ingestion does..."></textarea>
+          </div>
+
+          <div class="form-group">
+            <label>Source Type *</label>
+            <div class="radio-cards">
+              <div class="radio-card selected" onclick="selectSource(this, 's3')">
+                <div class="flex items-center gap-3">
+                  <div style="width: 40px; height: 40px; background: var(--color-stone-100); border-radius: 6px; display: flex; align-items: center; justify-content: center; font-weight: 500;">S3</div>
+                  <div class="flex flex-col gap-1">
+                    <div style="font-weight: 500;">AWS S3</div>
+                    <div class="text-xs text-secondary">Amazon Simple Storage Service</div>
+                  </div>
+                </div>
+              </div>
+              <div class="radio-card" onclick="selectSource(this, 'azure')">
+                <div class="flex items-center gap-3">
+                  <div style="width: 40px; height: 40px; background: var(--color-lake-100); border-radius: 6px; display: flex; align-items: center; justify-content: center; font-weight: 500;">AZ</div>
+                  <div class="flex flex-col gap-1">
+                    <div style="font-weight: 500;">Azure Blob</div>
+                    <div class="text-xs text-secondary">Azure Blob Storage</div>
+                  </div>
+                </div>
+              </div>
+              <div class="radio-card" onclick="selectSource(this, 'gcs')">
+                <div class="flex items-center gap-3">
+                  <div style="width: 40px; height: 40px; background: var(--color-racing-100); border-radius: 6px; display: flex; align-items: center; justify-content: center; font-weight: 500;">GC</div>
+                  <div class="flex flex-col gap-1">
+                    <div style="font-weight: 500;">Google Cloud Storage</div>
+                    <div class="text-xs text-secondary">GCS Bucket</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 2: Source Configuration -->
+        <div class="wizard-step-content hidden" id="step-2">
+          <h3 style="margin-bottom: 8px;">Source Configuration</h3>
+          <p class="text-secondary mb-4">Configure your cloud storage connection</p>
+
+          <div class="form-group">
+            <label for="bucket-name">Bucket Name *</label>
+            <input type="text" id="bucket-name" placeholder="my-data-bucket" required>
+          </div>
+
+          <div class="form-group">
+            <label for="path-prefix">Path Prefix/Pattern</label>
+            <input type="text" id="path-prefix" placeholder="data/events/" value="data/events/">
+            <span class="text-xs text-secondary mt-2" style="display: block;">Specify the folder path or file pattern (e.g., data/events/*.json)</span>
+          </div>
+
+          <div class="form-group">
+            <label for="file-format">File Format *</label>
+            <select id="file-format">
+              <option value="json">JSON</option>
+              <option value="csv">CSV</option>
+              <option value="parquet">Parquet</option>
+              <option value="avro">Avro</option>
+              <option value="orc">ORC</option>
+            </select>
+          </div>
+
+          <div class="card card-small" style="background: var(--color-lake-50); border-color: var(--color-lake-300); margin-top: 24px;">
+            <div class="flex gap-2">
+              <svg width="20" height="20" viewBox="0 0 20 20" fill="none" style="flex-shrink: 0; color: var(--color-lake-700);">
+                <circle cx="10" cy="10" r="8" stroke="currentColor" stroke-width="2"/>
+                <path d="M10 6V10M10 14V14.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              </svg>
+              <div class="text-sm">
+                <strong>Credentials:</strong> Credentials are securely stored and encrypted. They will only be used to access files from the specified bucket.
+              </div>
+            </div>
+          </div>
+
+          <details style="margin-top: 24px;">
+            <summary style="cursor: pointer; font-weight: 500; margin-bottom: 16px;">AWS Credentials (Required for S3)</summary>
+            <div class="flex flex-col gap-4">
+              <div class="form-group">
+                <label for="aws-key">AWS Access Key ID</label>
+                <input type="text" id="aws-key" placeholder="AKIAIOSFODNN7EXAMPLE">
+              </div>
+              <div class="form-group">
+                <label for="aws-secret">AWS Secret Access Key</label>
+                <input type="password" id="aws-secret" placeholder="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY">
+              </div>
+              <div class="form-group">
+                <label for="aws-region">AWS Region</label>
+                <select id="aws-region">
+                  <option value="us-east-1">us-east-1</option>
+                  <option value="us-west-2">us-west-2</option>
+                  <option value="eu-west-1">eu-west-1</option>
+                  <option value="ap-southeast-1">ap-southeast-1</option>
+                </select>
+              </div>
+            </div>
+          </details>
+        </div>
+
+        <!-- Step 3: Destination -->
+        <div class="wizard-step-content hidden" id="step-3">
+          <h3 style="margin-bottom: 8px;">Destination Configuration</h3>
+          <p class="text-secondary mb-4">Define where your data will be stored</p>
+
+          <div class="form-group">
+            <label for="database">Database *</label>
+            <input type="text" id="database" placeholder="marketing" value="marketing">
+          </div>
+
+          <div class="form-group">
+            <label for="table-name">Table Name *</label>
+            <input type="text" id="table-name" placeholder="events" value="events">
+            <span class="text-xs text-secondary mt-2" style="display: block;">Full table path will be: <strong id="full-table-path">marketing.events</strong></span>
+          </div>
+
+          <div class="form-group">
+            <label>
+              <input type="checkbox" id="auto-schema" checked style="margin-right: 8px;">
+              Auto-infer schema from source files
+            </label>
+          </div>
+
+          <div class="form-group">
+            <label for="partition-columns">Partition Columns (Optional)</label>
+            <input type="text" id="partition-columns" placeholder="e.g., year, month, day">
+            <span class="text-xs text-secondary mt-2" style="display: block;">Comma-separated list of columns to partition by</span>
+          </div>
+
+          <div class="card card-small" style="background: var(--color-apricot-50); border-color: var(--color-apricot-300); margin-top: 24px;">
+            <div class="flex gap-2">
+              <svg width="20" height="20" viewBox="0 0 20 20" fill="none" style="flex-shrink: 0; color: var(--color-apricot-700);">
+                <path d="M10 2L2 6L10 10L18 6L10 2Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+                <path d="M2 10L10 14L18 10M2 14L10 18L18 14" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+              </svg>
+              <div class="text-sm">
+                <strong>Apache Iceberg:</strong> Data will be stored as an Apache Iceberg table with ACID transactions and time-travel capabilities.
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 4: Schedule -->
+        <div class="wizard-step-content hidden" id="step-4">
+          <h3 style="margin-bottom: 8px;">Schedule Configuration</h3>
+          <p class="text-secondary mb-4">Set up when your ingestion should run</p>
+
+          <div class="form-group">
+            <label>Schedule Type *</label>
+            <div class="radio-cards">
+              <div class="radio-card selected" onclick="selectSchedule(this, 'hourly')">
+                <div class="flex flex-col gap-1">
+                  <div style="font-weight: 500;">Hourly</div>
+                  <div class="text-xs text-secondary">Run every hour</div>
+                </div>
+              </div>
+              <div class="radio-card" onclick="selectSchedule(this, 'daily')">
+                <div class="flex flex-col gap-1">
+                  <div style="font-weight: 500;">Daily</div>
+                  <div class="text-xs text-secondary">Run once per day</div>
+                </div>
+              </div>
+              <div class="radio-card" onclick="selectSchedule(this, 'custom')">
+                <div class="flex flex-col gap-1">
+                  <div style="font-weight: 500;">Custom Cron</div>
+                  <div class="text-xs text-secondary">Custom schedule</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div id="schedule-daily" class="hidden">
+            <div class="form-group">
+              <label for="daily-time">Run Time</label>
+              <input type="time" id="daily-time" value="02:00">
+            </div>
+          </div>
+
+          <div id="schedule-custom" class="hidden">
+            <div class="form-group">
+              <label for="cron-expression">Cron Expression</label>
+              <input type="text" id="cron-expression" placeholder="0 */6 * * *">
+              <span class="text-xs text-secondary mt-2" style="display: block;">Example: <code>0 */6 * * *</code> runs every 6 hours</span>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="timezone">Timezone</label>
+            <select id="timezone">
+              <option value="UTC">UTC</option>
+              <option value="America/New_York">America/New_York (EST)</option>
+              <option value="America/Los_Angeles">America/Los_Angeles (PST)</option>
+              <option value="Europe/London">Europe/London</option>
+              <option value="Asia/Tokyo">Asia/Tokyo</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Step 5: Advanced Options -->
+        <div class="wizard-step-content hidden" id="step-5">
+          <h3 style="margin-bottom: 8px;">Advanced Configuration</h3>
+          <p class="text-secondary mb-4">Optional advanced settings for your ingestion</p>
+
+          <div class="form-group">
+            <label for="processing-mode">Processing Mode</label>
+            <select id="processing-mode">
+              <option value="append">Append - Add new data to existing table</option>
+              <option value="overwrite">Overwrite - Replace all existing data</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label>Schema Evolution</label>
+            <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 8px;">
+              <label style="font-weight: 400;">
+                <input type="checkbox" id="allow-schema-evolution" checked style="margin-right: 8px;">
+                Allow automatic schema evolution
+              </label>
+              <label style="font-weight: 400;">
+                <input type="checkbox" id="merge-schema" checked style="margin-right: 8px;">
+                Merge schema from new files
+              </label>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="spark-config">Spark Configuration (JSON)</label>
+            <textarea id="spark-config" placeholder='{"spark.executor.memory": "4g"}'>{
+  "spark.executor.memory": "4g",
+  "spark.executor.cores": "2"
+}</textarea>
+            <span class="text-xs text-secondary mt-2" style="display: block;">Optional Spark configuration overrides</span>
+          </div>
+        </div>
+
+        <!-- Step 6: Review & Activate -->
+        <div class="wizard-step-content hidden" id="step-6">
+          <h3 style="margin-bottom: 8px;">Review & Activate</h3>
+          <p class="text-secondary mb-4">Review your configuration before activating</p>
+
+          <div class="flex flex-col gap-4">
+            <!-- Summary Card -->
+            <div class="card">
+              <h5 style="margin-bottom: 16px;">Configuration Summary</h5>
+
+              <div class="flex flex-col gap-3">
+                <div class="flex justify-between">
+                  <span class="text-secondary">Name:</span>
+                  <strong id="review-name">AWS Marketing Data</strong>
+                </div>
+                <div class="flex justify-between">
+                  <span class="text-secondary">Source:</span>
+                  <strong id="review-source">AWS S3 → my-data-bucket/data/events/</strong>
+                </div>
+                <div class="flex justify-between">
+                  <span class="text-secondary">Destination:</span>
+                  <strong id="review-destination">marketing.events</strong>
+                </div>
+                <div class="flex justify-between">
+                  <span class="text-secondary">Schedule:</span>
+                  <strong id="review-schedule">Hourly</strong>
+                </div>
+                <div class="flex justify-between">
+                  <span class="text-secondary">File Format:</span>
+                  <strong id="review-format">JSON</strong>
+                </div>
+              </div>
+            </div>
+
+            <!-- Cost Estimation -->
+            <div class="card" style="background: var(--color-fill-secondary);">
+              <h5 style="margin-bottom: 16px;">💰 Cost Estimation</h5>
+
+              <div class="flex flex-col gap-3">
+                <div class="flex justify-between">
+                  <span class="text-secondary">Estimated cost per run:</span>
+                  <strong>$0.12</strong>
+                </div>
+                <div class="flex justify-between">
+                  <span class="text-secondary">Runs per day:</span>
+                  <strong>24</strong>
+                </div>
+                <div class="flex justify-between" style="padding-top: 12px; border-top: 1px solid var(--color-border-secondary);">
+                  <span style="font-weight: 500;">Estimated monthly cost:</span>
+                  <strong style="font-size: 18px; color: var(--color-lake-500);">$86.40</strong>
+                </div>
+              </div>
+            </div>
+
+            <!-- Preview -->
+            <div class="card">
+              <div class="card-header" style="border: none; padding: 0;">
+                <h5>Data Preview</h5>
+                <button class="btn btn-secondary btn-small">🔄 Test Configuration</button>
+              </div>
+
+              <div class="table-container" style="border: none;">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>event_id</th>
+                      <th>event_type</th>
+                      <th>timestamp</th>
+                      <th>user_id</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td class="text-sm">evt_001</td>
+                      <td class="text-sm">page_view</td>
+                      <td class="text-sm text-secondary">2025-11-09 10:23:45</td>
+                      <td class="text-sm">usr_abc123</td>
+                    </tr>
+                    <tr>
+                      <td class="text-sm">evt_002</td>
+                      <td class="text-sm">button_click</td>
+                      <td class="text-sm text-secondary">2025-11-09 10:24:12</td>
+                      <td class="text-sm">usr_def456</td>
+                    </tr>
+                    <tr>
+                      <td class="text-sm">evt_003</td>
+                      <td class="text-sm">form_submit</td>
+                      <td class="text-sm text-secondary">2025-11-09 10:25:33</td>
+                      <td class="text-sm">usr_ghi789</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="text-xs text-secondary mt-2">
+                Showing first 3 rows from discovered files. 156 files found, approximately 12.4 GB total.
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Wizard Actions -->
+      <div class="wizard-actions">
+        <button class="btn btn-secondary" id="prevBtn" onclick="changeStep(-1)" disabled>
+          ← Previous
+        </button>
+        <div class="flex gap-2">
+          <button class="btn btn-text" onclick="window.location.href='index.html'">Cancel</button>
+          <button class="btn btn-primary" id="nextBtn" onclick="changeStep(1)">
+            Next →
+          </button>
+          <button class="btn btn-success hidden" id="activateBtn">
+            ✓ Activate Ingestion
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let currentStep = 1;
+    const totalSteps = 6;
+    let selectedSource = 's3';
+    let selectedSchedule = 'hourly';
+
+    function selectSource(element, source) {
+      document.querySelectorAll('.radio-card').forEach(card => {
+        card.classList.remove('selected');
+      });
+      element.classList.add('selected');
+      selectedSource = source;
+    }
+
+    function selectSchedule(element, schedule) {
+      document.querySelectorAll('#step-4 .radio-card').forEach(card => {
+        card.classList.remove('selected');
+      });
+      element.classList.add('selected');
+      selectedSchedule = schedule;
+
+      // Show/hide schedule options
+      document.getElementById('schedule-daily').classList.toggle('hidden', schedule !== 'daily');
+      document.getElementById('schedule-custom').classList.toggle('hidden', schedule !== 'custom');
+    }
+
+    function changeStep(direction) {
+      const newStep = currentStep + direction;
+
+      if (newStep < 1 || newStep > totalSteps) return;
+
+      // Hide current step
+      document.getElementById(`step-${currentStep}`).classList.add('hidden');
+      document.getElementById(`step-indicator-${currentStep}`).classList.remove('active');
+
+      if (direction < 0) {
+        document.getElementById(`step-indicator-${currentStep}`).classList.remove('completed');
+      } else {
+        document.getElementById(`step-indicator-${currentStep}`).classList.add('completed');
+      }
+
+      // Show new step
+      currentStep = newStep;
+      document.getElementById(`step-${currentStep}`).classList.remove('hidden');
+      document.getElementById(`step-indicator-${currentStep}`).classList.add('active');
+
+      // Update buttons
+      document.getElementById('prevBtn').disabled = currentStep === 1;
+
+      if (currentStep === totalSteps) {
+        document.getElementById('nextBtn').classList.add('hidden');
+        document.getElementById('activateBtn').classList.remove('hidden');
+        updateReview();
+      } else {
+        document.getElementById('nextBtn').classList.remove('hidden');
+        document.getElementById('activateBtn').classList.add('hidden');
+      }
+    }
+
+    function updateReview() {
+      document.getElementById('review-name').textContent =
+        document.getElementById('ingestion-name').value || 'AWS Marketing Data';
+
+      const bucket = document.getElementById('bucket-name').value || 'my-data-bucket';
+      const path = document.getElementById('path-prefix').value || 'data/events/';
+      document.getElementById('review-source').textContent =
+        `AWS S3 → ${bucket}/${path}`;
+
+      const db = document.getElementById('database').value || 'marketing';
+      const table = document.getElementById('table-name').value || 'events';
+      document.getElementById('review-destination').textContent = `${db}.${table}`;
+
+      document.getElementById('review-schedule').textContent =
+        selectedSchedule === 'hourly' ? 'Hourly' :
+        selectedSchedule === 'daily' ? `Daily at ${document.getElementById('daily-time').value}` :
+        `Custom: ${document.getElementById('cron-expression').value}`;
+
+      document.getElementById('review-format').textContent =
+        document.getElementById('file-format').value.toUpperCase();
+    }
+
+    // Update full table path as user types
+    document.getElementById('database').addEventListener('input', updateTablePath);
+    document.getElementById('table-name').addEventListener('input', updateTablePath);
+
+    function updateTablePath() {
+      const db = document.getElementById('database').value || 'database';
+      const table = document.getElementById('table-name').value || 'table';
+      document.getElementById('full-table-path').textContent = `${db}.${table}`;
+    }
+  </script>
+</body>
+</html>
