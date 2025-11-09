@@ -31,10 +31,12 @@ def temp_dir():
 
 @pytest.fixture
 def spark():
-    """Create a local Spark session for testing."""
+    """Create a local Spark session for testing with Iceberg support."""
     spark = SparkSession.builder \
         .appName("schema_evolution_test") \
         .master("local[1]") \
+        .config("spark.jars.packages", "org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.4.3") \
+        .config("spark.sql.extensions", "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions") \
         .config("spark.sql.warehouse.dir", tempfile.mkdtemp()) \
         .config("spark.sql.catalog.test_catalog", "org.apache.iceberg.spark.SparkCatalog") \
         .config("spark.sql.catalog.test_catalog.type", "hadoop") \
@@ -45,7 +47,7 @@ def spark():
     spark.stop()
 
 
-def create_json_files(directory: str, schema_type: str, num_files: int = 2) -> List[str]:
+def create_json_files(directory: str, schema_type: str, num_files: int = 2, id_offset: int = 0) -> List[str]:
     """
     Create JSON test files with different schemas.
 
@@ -53,6 +55,7 @@ def create_json_files(directory: str, schema_type: str, num_files: int = 2) -> L
         directory: Directory to create files in
         schema_type: 'base' (id, name, email) or 'evolved' (id, name, email, phone, address)
         num_files: Number of files to create
+        id_offset: Offset to add to IDs (for generating distinct records)
 
     Returns:
         List of file paths created
@@ -63,13 +66,13 @@ def create_json_files(directory: str, schema_type: str, num_files: int = 2) -> L
 
         if schema_type == "base":
             records = [
-                {"id": i * 100 + j, "name": f"User{j}", "email": f"user{j}@test.com"}
+                {"id": id_offset + i * 100 + j, "name": f"User{j}", "email": f"user{j}@test.com"}
                 for j in range(10)
             ]
         elif schema_type == "evolved":
             records = [
                 {
-                    "id": i * 100 + j,
+                    "id": id_offset + i * 100 + j,
                     "name": f"User{j}",
                     "email": f"user{j}@test.com",
                     "phone": f"555-{j:04d}",
@@ -312,10 +315,10 @@ class TestAppendNewColumnsStrategy:
         assert len(table_df.columns) == 3
         assert table_df.count() == 20
 
-        # Phase 2: Read evolved files
+        # Phase 2: Read evolved files (with different IDs to avoid duplicates)
         evolved_dir = os.path.join(temp_dir, "evolved")
         os.makedirs(evolved_dir)
-        evolved_files = create_json_files(evolved_dir, "evolved", num_files=2)
+        evolved_files = create_json_files(evolved_dir, "evolved", num_files=2, id_offset=1000)
         evolved_df = spark.read.json([f"file://{f}" for f in evolved_files])
 
         # Apply schema evolution
@@ -333,21 +336,21 @@ class TestAppendNewColumnsStrategy:
         assert len(updated_table.columns) == 5
         assert set(updated_table.columns) == {"id", "name", "email", "phone", "address"}
 
-        # Append evolved data
-        evolved_df.writeTo(table_name).using("iceberg").append()
+        # Append evolved data (enable schema evolution for append)
+        evolved_df.writeTo(table_name).using("iceberg").option("merge-schema", "true").append()
 
         # Verify backward compatibility
         final_table = spark.table(table_name)
         assert final_table.count() == 40
 
-        # Old records should have NULL for new fields
-        old_records = final_table.filter("id < 100")
+        # Old records (ids 0-109) should have NULL for new fields
+        old_records = final_table.filter("id < 1000")
         assert old_records.count() == 20
         assert old_records.filter("phone IS NULL").count() == 20
         assert old_records.filter("address IS NULL").count() == 20
 
-        # New records should have values
-        new_records = final_table.filter("id >= 100")
+        # New records (ids 1000-1109) should have values
+        new_records = final_table.filter("id >= 1000")
         assert new_records.count() == 20
         assert new_records.filter("phone IS NOT NULL").count() == 20
         assert new_records.filter("address IS NOT NULL").count() == 20
@@ -413,9 +416,13 @@ class TestSyncAllColumnsStrategy:
         """
         table_name = "test_catalog.default.sync_type_test"
 
-        # Create table with int type
+        # Create table with int type (explicitly specify IntegerType)
         data = [(1, "User1")]
-        df = spark.createDataFrame(data, ["id", "name"])
+        initial_schema = StructType([
+            StructField("id", IntegerType(), True),
+            StructField("name", StringType(), True),
+        ])
+        df = spark.createDataFrame(data, initial_schema)
         df.writeTo(table_name).using("iceberg").create()
 
         # New schema with long type
