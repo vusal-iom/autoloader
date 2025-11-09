@@ -4,6 +4,7 @@ from typing import List, Optional
 import uuid
 import logging
 from datetime import datetime
+from fastapi import HTTPException
 
 from app.models.domain import Ingestion, IngestionStatus, Run, RunStatus
 from app.models.schemas import (
@@ -24,6 +25,10 @@ from app.config import get_settings, get_spark_connect_url
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
+# Constants
+DEFAULT_TENANT_ID = "tenant_123"  # TODO: Get from auth
+TRIGGER_TYPE_MANUAL = "manual"
+
 
 class IngestionService:
     """Service for managing ingestion configurations."""
@@ -35,28 +40,36 @@ class IngestionService:
         self.spark_service = SparkService()
         self.cost_estimator = CostEstimator()
 
-    async def create_ingestion(self, data: IngestionCreate, user_id: str) -> IngestionResponse:
+    @staticmethod
+    async def _ensure_prefect_available(error_message: str):
         """
-        Create a new ingestion configuration.
+        Ensure Prefect service is available, raise HTTPException if not.
 
-        Steps:
-        1. Validate configuration
-        2. Generate IDs and paths
-        3. Test Spark Connect connectivity
-        4. Save to database
-        5. Create Prefect deployment if scheduling enabled
+        Args:
+            error_message: Custom error message to include in exception
+
+        Raises:
+            HTTPException: 503 if Prefect service is unavailable
         """
-        ingestion_id = f"ing_{uuid.uuid4().hex[:12]}"
-        tenant_id = "tenant_123"  # TODO: Get from auth
+        prefect = await get_prefect_service()
+        if not prefect.initialized:
+            raise HTTPException(
+                status_code=503,
+                detail=f"{error_message}: Orchestration service unavailable"
+            )
+        return prefect
 
-        # Generate checkpoint location
-        checkpoint_location = f"{settings.checkpoint_base_path}{tenant_id}/{ingestion_id}/"
+    def _generate_checkpoint_location(self, tenant_id: str, ingestion_id: str) -> str:
+        """Generate checkpoint location path for an ingestion."""
+        return f"{settings.checkpoint_base_path}{tenant_id}/{ingestion_id}/"
 
-        # Create domain model
-        # Note: spark_connect_url and token are retrieved at runtime from cluster_id
-        ingestion = Ingestion(
+    def _build_ingestion_from_create(
+        self, data: IngestionCreate, ingestion_id: str, user_id: str, checkpoint_location: str
+    ) -> Ingestion:
+        """Build Ingestion domain model from IngestionCreate schema."""
+        return Ingestion(
             id=ingestion_id,
-            tenant_id=tenant_id,
+            tenant_id=DEFAULT_TENANT_ID,
             name=data.name,
             status=IngestionStatus.DRAFT,
             cluster_id=data.cluster_id,
@@ -67,7 +80,7 @@ class IngestionService:
             source_credentials=data.source.credentials,
             # Format
             format_type=data.format.type,
-            format_options=data.format.options.dict() if data.format.options else None,
+            format_options=data.format.options.model_dump() if data.format.options else None,
             schema_inference=data.format.schema.inference if data.format.schema else "auto",
             schema_evolution_enabled=data.format.schema.evolution_enabled if data.format.schema else True,
             schema_json=data.format.schema.schema_json if data.format.schema else None,
@@ -80,7 +93,7 @@ class IngestionService:
             partitioning_columns=data.destination.partitioning.columns if data.destination.partitioning else None,
             z_ordering_enabled=data.destination.optimization.z_ordering_enabled if data.destination.optimization else False,
             z_ordering_columns=data.destination.optimization.z_ordering_columns if data.destination.optimization else None,
-            # Schedule (batch mode only)
+            # Schedule
             schedule_frequency=data.schedule.frequency,
             schedule_time=data.schedule.time,
             schedule_timezone=data.schedule.timezone,
@@ -96,6 +109,23 @@ class IngestionService:
             created_by=user_id,
         )
 
+    async def create_ingestion(self, data: IngestionCreate, user_id: str) -> IngestionResponse:
+        """
+        Create a new ingestion configuration.
+
+        Steps:
+        1. Generate IDs and paths
+        2. Build ingestion model
+        3. Estimate cost
+        4. Save to database
+        5. Create Prefect deployment if scheduling enabled
+        """
+        ingestion_id = f"ing_{uuid.uuid4().hex[:12]}"
+        checkpoint_location = self._generate_checkpoint_location(DEFAULT_TENANT_ID, ingestion_id)
+
+        # Build ingestion model
+        ingestion = self._build_ingestion_from_create(data, ingestion_id, user_id, checkpoint_location)
+
         # Estimate cost
         cost = self.cost_estimator.estimate(data)
         ingestion.estimated_monthly_cost = cost.total_monthly
@@ -103,27 +133,22 @@ class IngestionService:
         # Save to database
         ingestion = self.ingestion_repo.create(ingestion)
 
-        # Create Prefect deployment (required for execution)
+        # Create Prefect deployment if scheduling enabled
         if ingestion.schedule_frequency:
-            prefect = await get_prefect_service()
+            try:
+                prefect = await self._ensure_prefect_available("Cannot create ingestion")
+                deployment_id = await prefect.create_deployment(ingestion)
 
-            if not prefect.initialized:
+                # Store deployment ID
+                ingestion.prefect_deployment_id = deployment_id
+                self.db.commit()
+                self.db.refresh(ingestion)
+
+                logger.info(f"Created Prefect deployment for ingestion {ingestion_id}")
+            except HTTPException:
                 # Rollback ingestion creation
                 self.ingestion_repo.delete(ingestion_id)
-                from fastapi import HTTPException
-                raise HTTPException(
-                    status_code=503,
-                    detail="Cannot create ingestion: Orchestration service unavailable"
-                )
-
-            deployment_id = await prefect.create_deployment(ingestion)
-
-            # Store deployment ID
-            ingestion.prefect_deployment_id = deployment_id
-            self.db.commit()
-            self.db.refresh(ingestion)  # Refresh to ensure latest state
-
-            logger.info(f"✅ Created Prefect deployment for ingestion {ingestion_id}")
+                raise
 
         return self._to_response(ingestion)
 
@@ -168,15 +193,7 @@ class IngestionService:
 
         # Update Prefect deployment schedule if changed
         if schedule_changed and ingestion.prefect_deployment_id:
-            prefect = await get_prefect_service()
-
-            if not prefect.initialized:
-                from fastapi import HTTPException
-                raise HTTPException(
-                    status_code=503,
-                    detail="Cannot update schedule: Orchestration service unavailable"
-                )
-
+            prefect = await self._ensure_prefect_available("Cannot update schedule")
             await prefect.update_deployment_schedule(
                 deployment_id=ingestion.prefect_deployment_id,
                 schedule_frequency=ingestion.schedule_frequency,
@@ -184,13 +201,12 @@ class IngestionService:
                 schedule_cron=ingestion.schedule_cron,
                 timezone=ingestion.schedule_timezone or "UTC"
             )
-            logger.info(f"✅ Updated Prefect deployment schedule for ingestion {ingestion_id}")
+            logger.info(f"Updated Prefect deployment schedule for ingestion {ingestion_id}")
 
         return self._to_response(ingestion)
 
     async def delete_ingestion(self, ingestion_id: str, delete_table: bool = False) -> bool:
         """Delete an ingestion."""
-        # Get ingestion to retrieve Prefect deployment ID
         ingestion = self.ingestion_repo.get_by_id(ingestion_id)
         if not ingestion:
             return False
@@ -200,13 +216,13 @@ class IngestionService:
             try:
                 prefect = await get_prefect_service()
                 await prefect.delete_deployment(ingestion.prefect_deployment_id)
-                logger.info(f"✅ Deleted Prefect deployment for ingestion {ingestion_id}")
+                logger.info(f"Deleted Prefect deployment for ingestion {ingestion_id}")
             except Exception as e:
-                logger.error(f"❌ Failed to delete Prefect deployment: {e}")
+                logger.error(f"Failed to delete Prefect deployment: {e}")
                 # Continue with ingestion deletion anyway
 
         # TODO: Cleanup checkpoints
-        # TODO: Delete table if requested
+        # TODO: Delete table if requested (delete_table parameter)
 
         return self.ingestion_repo.delete(ingestion_id)
 
@@ -224,37 +240,28 @@ class IngestionService:
             ValueError: If ingestion not found, not active, or has no deployment
             HTTPException: If Prefect service unavailable (503)
         """
-        # Load ingestion
         ingestion = self.ingestion_repo.get_by_id(ingestion_id)
         if not ingestion:
             raise ValueError(f"Ingestion not found: {ingestion_id}")
 
-        if ingestion.status != IngestionStatus.ACTIVE and ingestion.status != IngestionStatus.DRAFT:
+        if ingestion.status not in (IngestionStatus.ACTIVE, IngestionStatus.DRAFT):
             raise ValueError(f"Ingestion not active: {ingestion.status}")
 
-        # Require Prefect deployment
         if not ingestion.prefect_deployment_id:
             raise ValueError(
                 f"Ingestion {ingestion_id} does not have a deployment. "
                 "Please configure a schedule to enable execution."
             )
 
-        # Trigger via Prefect (single execution path)
-        prefect = await get_prefect_service()
-
-        if not prefect.initialized:
-            from fastapi import HTTPException
-            raise HTTPException(
-                status_code=503,
-                detail="Orchestration service unavailable. Please try again later."
-            )
+        # Trigger via Prefect
+        prefect = await self._ensure_prefect_available("Orchestration service unavailable. Please try again later")
 
         flow_run_id = await prefect.trigger_deployment(
             deployment_id=ingestion.prefect_deployment_id,
-            parameters={"ingestion_id": str(ingestion_id), "trigger": "manual"}
+            parameters={"ingestion_id": str(ingestion_id), "trigger": TRIGGER_TYPE_MANUAL}
         )
 
-        logger.info(f"✅ Triggered Prefect flow run {flow_run_id} for ingestion {ingestion_id}")
+        logger.info(f"Triggered Prefect flow run {flow_run_id} for ingestion {ingestion_id}")
 
         return {
             "status": "triggered",
@@ -271,17 +278,9 @@ class IngestionService:
 
         # Pause Prefect deployment
         if ingestion.prefect_deployment_id:
-            prefect = await get_prefect_service()
-
-            if not prefect.initialized:
-                from fastapi import HTTPException
-                raise HTTPException(
-                    status_code=503,
-                    detail="Cannot pause ingestion: Orchestration service unavailable"
-                )
-
+            prefect = await self._ensure_prefect_available("Cannot pause ingestion")
             await prefect.pause_deployment(ingestion.prefect_deployment_id)
-            logger.info(f"✅ Paused Prefect deployment for ingestion {ingestion_id}")
+            logger.info(f"Paused Prefect deployment for ingestion {ingestion_id}")
 
         result = self.ingestion_repo.update_status(ingestion_id, IngestionStatus.PAUSED)
         return result is not None
@@ -294,17 +293,9 @@ class IngestionService:
 
         # Resume Prefect deployment
         if ingestion.prefect_deployment_id:
-            prefect = await get_prefect_service()
-
-            if not prefect.initialized:
-                from fastapi import HTTPException
-                raise HTTPException(
-                    status_code=503,
-                    detail="Cannot resume ingestion: Orchestration service unavailable"
-                )
-
+            prefect = await self._ensure_prefect_available("Cannot resume ingestion")
             await prefect.resume_deployment(ingestion.prefect_deployment_id)
-            logger.info(f"✅ Resumed Prefect deployment for ingestion {ingestion_id}")
+            logger.info(f"Resumed Prefect deployment for ingestion {ingestion_id}")
 
         result = self.ingestion_repo.update_status(ingestion_id, IngestionStatus.ACTIVE)
         return result is not None
@@ -326,7 +317,8 @@ class IngestionService:
         """Estimate monthly cost for ingestion."""
         return self.cost_estimator.estimate(data)
 
-    def _to_response(self, ingestion: Ingestion) -> IngestionResponse:
+    @staticmethod
+    def _to_response(ingestion: Ingestion) -> IngestionResponse:
         """Convert domain model to response schema."""
         from app.models.schemas import (
             SourceConfig,
@@ -347,7 +339,7 @@ class IngestionService:
             name=ingestion.name,
             status=ingestion.status,
             cluster_id=ingestion.cluster_id,
-            spark_connect_url=get_spark_connect_url(ingestion.cluster_id),  # Computed dynamically
+            spark_connect_url=get_spark_connect_url(ingestion.cluster_id),
             source=SourceConfig(
                 type=ingestion.source_type,
                 path=ingestion.source_path,
