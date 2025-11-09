@@ -103,22 +103,27 @@ class IngestionService:
         # Save to database
         ingestion = self.ingestion_repo.create(ingestion)
 
-        # Create Prefect deployment if scheduling enabled
+        # Create Prefect deployment (required for execution)
         if ingestion.schedule_frequency:
-            try:
-                prefect = await get_prefect_service()
-                deployment_id = await prefect.create_deployment(ingestion)
+            prefect = await get_prefect_service()
 
-                # Store deployment ID
-                ingestion.prefect_deployment_id = deployment_id
-                self.db.commit()
-                self.db.refresh(ingestion)  # Refresh to ensure latest state
+            if not prefect.initialized:
+                # Rollback ingestion creation
+                self.ingestion_repo.delete(ingestion_id)
+                from fastapi import HTTPException
+                raise HTTPException(
+                    status_code=503,
+                    detail="Cannot create ingestion: Orchestration service unavailable"
+                )
 
-                logger.info(f"✅ Created Prefect deployment for ingestion {ingestion_id}")
-            except Exception as e:
-                logger.error(f"❌ Failed to create Prefect deployment: {e}")
-                logger.warning("Ingestion created but scheduling unavailable")
-                # Don't fail the request - ingestion can still be triggered manually
+            deployment_id = await prefect.create_deployment(ingestion)
+
+            # Store deployment ID
+            ingestion.prefect_deployment_id = deployment_id
+            self.db.commit()
+            self.db.refresh(ingestion)  # Refresh to ensure latest state
+
+            logger.info(f"✅ Created Prefect deployment for ingestion {ingestion_id}")
 
         return self._to_response(ingestion)
 
@@ -163,19 +168,23 @@ class IngestionService:
 
         # Update Prefect deployment schedule if changed
         if schedule_changed and ingestion.prefect_deployment_id:
-            try:
-                prefect = await get_prefect_service()
-                await prefect.update_deployment_schedule(
-                    deployment_id=ingestion.prefect_deployment_id,
-                    schedule_frequency=ingestion.schedule_frequency,
-                    schedule_time=ingestion.schedule_time,
-                    schedule_cron=ingestion.schedule_cron,
-                    timezone=ingestion.schedule_timezone or "UTC"
+            prefect = await get_prefect_service()
+
+            if not prefect.initialized:
+                from fastapi import HTTPException
+                raise HTTPException(
+                    status_code=503,
+                    detail="Cannot update schedule: Orchestration service unavailable"
                 )
-                logger.info(f"✅ Updated Prefect deployment schedule for ingestion {ingestion_id}")
-            except Exception as e:
-                logger.error(f"❌ Failed to update Prefect deployment: {e}")
-                # Don't fail the request - schedule update will be retried
+
+            await prefect.update_deployment_schedule(
+                deployment_id=ingestion.prefect_deployment_id,
+                schedule_frequency=ingestion.schedule_frequency,
+                schedule_time=ingestion.schedule_time,
+                schedule_cron=ingestion.schedule_cron,
+                timezone=ingestion.schedule_timezone or "UTC"
+            )
+            logger.info(f"✅ Updated Prefect deployment schedule for ingestion {ingestion_id}")
 
         return self._to_response(ingestion)
 
@@ -203,19 +212,17 @@ class IngestionService:
 
     async def trigger_manual_run(self, ingestion_id: str) -> dict:
         """
-        Trigger a manual ingestion run.
-
-        If ingestion has a Prefect deployment, triggers via Prefect.
-        Otherwise, falls back to direct BatchOrchestrator execution.
+        Trigger a manual ingestion run via Prefect.
 
         Args:
             ingestion_id: Ingestion ID
 
         Returns:
-            Dict with run information
+            Dict with flow_run_id and trigger status
 
         Raises:
-            ValueError: If ingestion not found or not active
+            ValueError: If ingestion not found, not active, or has no deployment
+            HTTPException: If Prefect service unavailable (503)
         """
         # Load ingestion
         ingestion = self.ingestion_repo.get_by_id(ingestion_id)
@@ -225,40 +232,35 @@ class IngestionService:
         if ingestion.status != IngestionStatus.ACTIVE and ingestion.status != IngestionStatus.DRAFT:
             raise ValueError(f"Ingestion not active: {ingestion.status}")
 
-        # Primary path: Trigger via Prefect deployment
-        if ingestion.prefect_deployment_id:
-            try:
-                prefect = await get_prefect_service()
-                flow_run_id = await prefect.trigger_deployment(
-                    deployment_id=ingestion.prefect_deployment_id,
-                    parameters={"ingestion_id": str(ingestion_id), "trigger": "manual"}
-                )
+        # Require Prefect deployment
+        if not ingestion.prefect_deployment_id:
+            raise ValueError(
+                f"Ingestion {ingestion_id} does not have a deployment. "
+                "Please configure a schedule to enable execution."
+            )
 
-                logger.info(f"✅ Triggered Prefect flow run {flow_run_id} for ingestion {ingestion_id}")
+        # Trigger via Prefect (single execution path)
+        prefect = await get_prefect_service()
 
-                return {
-                    "status": "triggered",
-                    "method": "prefect",
-                    "flow_run_id": flow_run_id,
-                    "message": "Ingestion run triggered via Prefect"
-                }
+        if not prefect.initialized:
+            from fastapi import HTTPException
+            raise HTTPException(
+                status_code=503,
+                detail="Orchestration service unavailable. Please try again later."
+            )
 
-            except Exception as e:
-                logger.error(f"❌ Failed to trigger Prefect flow: {e}")
-                logger.warning("Falling back to direct orchestrator execution")
-                # Fall through to fallback path
+        flow_run_id = await prefect.trigger_deployment(
+            deployment_id=ingestion.prefect_deployment_id,
+            parameters={"ingestion_id": str(ingestion_id), "trigger": "manual"}
+        )
 
-        # Fallback path: Direct BatchOrchestrator execution
-        logger.info(f"Triggering ingestion {ingestion_id} via BatchOrchestrator (fallback)")
-        from app.services.batch_orchestrator import BatchOrchestrator
-        orchestrator = BatchOrchestrator(self.db)
-        run = orchestrator.run_ingestion(ingestion)
+        logger.info(f"✅ Triggered Prefect flow run {flow_run_id} for ingestion {ingestion_id}")
 
         return {
-            "status": "completed",
-            "method": "direct",
-            "run_id": run.id,
-            "message": "Ingestion run completed via direct execution"
+            "status": "triggered",
+            "method": "prefect",
+            "flow_run_id": flow_run_id,
+            "message": "Ingestion run triggered via Prefect"
         }
 
     async def pause_ingestion(self, ingestion_id: str) -> bool:
@@ -269,12 +271,17 @@ class IngestionService:
 
         # Pause Prefect deployment
         if ingestion.prefect_deployment_id:
-            try:
-                prefect = await get_prefect_service()
-                await prefect.pause_deployment(ingestion.prefect_deployment_id)
-                logger.info(f"✅ Paused Prefect deployment for ingestion {ingestion_id}")
-            except Exception as e:
-                logger.error(f"❌ Failed to pause Prefect deployment: {e}")
+            prefect = await get_prefect_service()
+
+            if not prefect.initialized:
+                from fastapi import HTTPException
+                raise HTTPException(
+                    status_code=503,
+                    detail="Cannot pause ingestion: Orchestration service unavailable"
+                )
+
+            await prefect.pause_deployment(ingestion.prefect_deployment_id)
+            logger.info(f"✅ Paused Prefect deployment for ingestion {ingestion_id}")
 
         result = self.ingestion_repo.update_status(ingestion_id, IngestionStatus.PAUSED)
         return result is not None
@@ -287,12 +294,17 @@ class IngestionService:
 
         # Resume Prefect deployment
         if ingestion.prefect_deployment_id:
-            try:
-                prefect = await get_prefect_service()
-                await prefect.resume_deployment(ingestion.prefect_deployment_id)
-                logger.info(f"✅ Resumed Prefect deployment for ingestion {ingestion_id}")
-            except Exception as e:
-                logger.error(f"❌ Failed to resume Prefect deployment: {e}")
+            prefect = await get_prefect_service()
+
+            if not prefect.initialized:
+                from fastapi import HTTPException
+                raise HTTPException(
+                    status_code=503,
+                    detail="Cannot resume ingestion: Orchestration service unavailable"
+                )
+
+            await prefect.resume_deployment(ingestion.prefect_deployment_id)
+            logger.info(f"✅ Resumed Prefect deployment for ingestion {ingestion_id}")
 
         result = self.ingestion_repo.update_status(ingestion_id, IngestionStatus.ACTIVE)
         return result is not None

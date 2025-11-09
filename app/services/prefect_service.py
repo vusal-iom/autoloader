@@ -14,7 +14,7 @@ from datetime import datetime
 
 from prefect import get_client
 from prefect.client.schemas.schedules import CronSchedule
-from prefect.client.schemas.actions import DeploymentScheduleCreate
+from prefect.client.schemas.actions import DeploymentScheduleCreate, DeploymentScheduleUpdate, DeploymentUpdate
 from prefect.client.schemas.filters import DeploymentFilter, FlowRunFilter
 from prefect.client.schemas.sorting import FlowRunSort
 from prefect.exceptions import ObjectNotFound
@@ -165,8 +165,6 @@ class PrefectService:
 
         try:
             async with get_client() as client:
-                from prefect.client.schemas.actions import DeploymentScheduleUpdate
-
                 # Build schedule
                 schedules = []
                 if schedule_frequency:
@@ -184,7 +182,7 @@ class PrefectService:
 
                 await client.update_deployment(
                     deployment_id=UUID(deployment_id),
-                    schedules=schedules,
+                    deployment=DeploymentUpdate(schedules=schedules)
                 )
 
                 logger.info(f"✅ Updated schedule for deployment {deployment_id}")
