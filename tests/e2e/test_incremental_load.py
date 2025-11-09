@@ -31,7 +31,7 @@ from typing import Dict
 from fastapi.testclient import TestClient
 from pyspark.sql import SparkSession
 
-from .helpers import (
+from tests.e2e.helpers import (
     E2ELogger,
     create_standard_ingestion,
     wait_for_run_completion,
