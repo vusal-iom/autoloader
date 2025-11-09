@@ -1,28 +1,29 @@
 """
-E2E Test: Incremental Load (E2E-02)
+E2E Test: Incremental Load (E2E-02) - Prefect Integration
 
-Tests the incremental file processing workflow:
-1. Create ingestion configuration for S3 JSON files
-2. Upload 3 JSON files and trigger first run
+Tests the incremental file processing workflow with Prefect:
+1. Create ingestion with schedule → Prefect deployment created
+2. Upload 3 JSON files and trigger first run via Prefect
 3. Verify first run processes 3 files, 3000 records
 4. Upload 2 additional JSON files
-5. Trigger second run
+5. Trigger second run via Prefect
 6. Verify second run processes only 2 NEW files (total 5000 records, not 6000)
 7. Verify no duplicate data
 8. Verify run history and metrics accuracy
+9. Delete ingestion → Prefect deployment deleted
 
 This test validates the core value proposition:
 - File state tracking prevents re-processing
 - Checkpoint management works correctly
 - Metrics are accurate across multiple runs
 - No data duplication occurs
+- Prefect integration works end-to-end
 
-This test uses REAL services from docker-compose.test.yml:
-- MinIO (S3-compatible storage) on localhost:9000
-- Spark Connect on localhost:15002
-- PostgreSQL on localhost:5432
+This test requires REAL Prefect server from docker-compose.test.yml.
+All interactions are API-only for setup/verification.
 
-All interactions are API-only (no direct database manipulation).
+IMPORTANT: This test commits data to the real database (not using transactional isolation)
+because Prefect tasks create their own database sessions via SessionLocal().
 """
 
 import time
