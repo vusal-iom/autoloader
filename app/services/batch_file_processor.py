@@ -208,11 +208,6 @@ class BatchFileProcessor:
             # Get schema evolution strategy
             strategy = getattr(self.ingestion, 'on_schema_change', 'ignore')
 
-            # Validate strategy compatibility with format
-            SchemaEvolutionService.validate_strategy_compatibility(
-                self.ingestion.format_type, strategy
-            )
-
             # Apply schema evolution based on strategy
             self._apply_schema_evolution(spark, table_identifier, df, strategy)
 

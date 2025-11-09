@@ -130,7 +130,8 @@ def _build_ingestion_payload(
             "row_count_threshold": None,
             "alerts_enabled": False,
             "alert_recipients": []
-        }
+        },
+        "on_schema_change": "append_new_columns" if evolution_enabled else "ignore"
     }
 
 
