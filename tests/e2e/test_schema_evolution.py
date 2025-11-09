@@ -1,15 +1,16 @@
 """
-E2E Test: Schema Evolution (E2E-03)
+E2E Test: Schema Evolution (E2E-03) - Prefect Integration
 
-Tests the schema evolution workflow:
-1. Create ingestion configuration with schema evolution enabled
+Tests the schema evolution workflow with Prefect:
+1. Create ingestion with schedule and schema evolution enabled → Prefect deployment created
 2. Upload 3 JSON files with base schema (5 fields)
-3. Trigger first run and verify 3000 records with 5 columns
+3. Trigger first run via Prefect and verify 3000 records with 5 columns
 4. Upload 2 JSON files with evolved schema (7 fields - adding region, metadata)
-5. Trigger second run
+5. Trigger second run via Prefect
 6. Verify schema evolution detected and applied (7 columns in table)
 7. Verify backward compatibility (old records have NULL for new fields)
 8. Verify all 5000 records are queryable with full schema
+9. Delete ingestion → Prefect deployment deleted
 
 This test validates:
 - Automatic schema detection on new files
@@ -17,13 +18,13 @@ This test validates:
 - Backward compatibility of existing data
 - No data loss during schema changes
 - Incremental processing still works with schema changes
+- Prefect integration works end-to-end
 
-This test uses REAL services from docker-compose.test.yml:
-- MinIO (S3-compatible storage) on localhost:9000
-- Spark Connect on localhost:15002
-- PostgreSQL on localhost:5432
+This test requires REAL Prefect server from docker-compose.test.yml.
+All interactions are API-only for setup/verification.
 
-All interactions are API-only (no direct database manipulation).
+IMPORTANT: This test commits data to the real database (not using transactional isolation)
+because Prefect tasks create their own database sessions via SessionLocal().
 """
 
 import time
