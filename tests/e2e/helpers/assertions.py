@@ -223,7 +223,7 @@ def print_test_summary(details: List[tuple], footer_message: Optional[str] = Non
             ("Files Processed", 3),
             ("Records Ingested", 3000),
             ("Table", table_identifier),
-            ("Status", "SUCCESS ✅")
+            ("Status", "SUCCESS")
         ])
     """
     print(f"\nSummary:")

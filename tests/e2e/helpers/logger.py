@@ -47,11 +47,11 @@ class E2ELogger:
     def success(self, msg: str, always: bool = True):
         """Log success message."""
         if self.verbose or always:
-            print(f"  ✅ {msg}")
+            print(f"  {msg}")
 
     def error(self, msg: str):
         """Log error message (always shown)."""
-        print(f"  ❌ {msg}")
+        print(f"  ERROR: {msg}")
 
     @contextmanager
     def timed_phase(self, title: str):

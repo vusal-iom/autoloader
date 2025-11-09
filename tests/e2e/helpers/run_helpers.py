@@ -82,24 +82,18 @@ def wait_for_run_completion(
 
         if logger and logger.verbose:
             elapsed = int(time.time() - start_time)
-            print(f"  ⏱️  {elapsed}s - Status: {run_status}", end="")
+            print(f"  {elapsed}s - Status: {run_status}", end="")
 
         if run_status in SUCCESS_STATUSES:
-            if logger and logger.verbose:
-                print(" ✅")
             elapsed = int(time.time() - start_time)
             if logger:
                 logger.success(f"Run completed in {elapsed}s", always=True)
             return run
 
         elif run_status == "failed":
-            if logger and logger.verbose:
-                print(" ❌")
             pytest.fail(f"Run failed: {run.get('errors', [])}")
 
         else:
-            if logger and logger.verbose:
-                print()
             time.sleep(poll_interval)
 
     pytest.fail(

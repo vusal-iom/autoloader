@@ -75,15 +75,13 @@ class TestPrefectWorkflows:
         9. Verify deployment deleted in Prefect
         """
         logger = E2ELogger()
-        logger.section("🧪 E2E TEST: Complete Prefect Lifecycle")
+        logger.section("E2E TEST: Complete Prefect Lifecycle")
 
         table_name = generate_unique_table_name("prefect_lifecycle")
         deployment_id = None
 
-        # =============================================================================
         # Phase 1: Create ingestion with schedule
-        # =============================================================================
-        logger.phase("📝 Phase 1: Creating ingestion with schedule...")
+        logger.phase("Phase 1: Creating ingestion with schedule")
 
         ingestion = create_standard_ingestion(
             api_client=e2e_api_client_no_override,
@@ -113,10 +111,8 @@ class TestPrefectWorkflows:
         deployment_id = ingestion["prefect_deployment_id"]
         logger.success(f"Prefect deployment ID: {deployment_id}")
 
-        # =============================================================================
         # Phase 2: Verify deployment exists in Prefect
-        # =============================================================================
-        logger.phase("🔍 Phase 2: Verifying deployment in Prefect server...")
+        logger.phase("Phase 2: Verifying deployment in Prefect server")
 
         deployment = await verify_prefect_deployment_exists(
             deployment_id=deployment_id,
@@ -128,10 +124,8 @@ class TestPrefectWorkflows:
         # Verify deployment is active with schedules
         await verify_prefect_deployment_active(deployment_id=deployment_id, logger=logger)
 
-        # =============================================================================
         # Phase 3: Trigger manual run via API
-        # =============================================================================
-        logger.phase("🚀 Phase 3: Triggering manual run via API...")
+        logger.phase("Phase 3: Triggering manual run via API")
 
         trigger_response = e2e_api_client_no_override.post(
             f"/api/v1/ingestions/{ingestion_id}/run"
@@ -152,10 +146,8 @@ class TestPrefectWorkflows:
         flow_run_id = trigger_data["flow_run_id"]
         logger.success(f"Prefect flow run triggered: {flow_run_id}")
 
-        # =============================================================================
         # Phase 4: Wait for flow run completion and verify in Prefect
-        # =============================================================================
-        logger.phase("⏳ Phase 4: Waiting for flow run completion...")
+        logger.phase("Phase 4: Waiting for flow run completion")
 
         await wait_for_prefect_flow_completion(
             flow_run_id=flow_run_id,
@@ -169,10 +161,8 @@ class TestPrefectWorkflows:
 
         logger.success(f"Found run ID: {run_id}")
 
-        # =============================================================================
         # Phase 5: Verify run metrics via API
-        # =============================================================================
-        logger.phase("📊 Phase 5: Verifying run metrics...")
+        logger.phase("Phase 5: Verifying run metrics")
 
         run = wait_for_run_completion(
             e2e_api_client_no_override,
@@ -190,10 +180,8 @@ class TestPrefectWorkflows:
             logger=logger
         )
 
-        # =============================================================================
         # Phase 6: Verify data in Iceberg table
-        # =============================================================================
-        logger.phase("🔍 Phase 6: Verifying data in Iceberg table...")
+        logger.phase("Phase 6: Verifying data in Iceberg table")
 
         table_identifier = get_table_identifier(ingestion)
 
@@ -208,10 +196,8 @@ class TestPrefectWorkflows:
 
         logger.success("Data verification passed")
 
-        # =============================================================================
         # Phase 7: Update schedule
-        # =============================================================================
-        logger.phase("🔄 Phase 7: Updating schedule...")
+        logger.phase("Phase 7: Updating schedule")
 
         update_response = e2e_api_client_no_override.put(
             f"/api/v1/ingestions/{ingestion_id}",
@@ -237,10 +223,8 @@ class TestPrefectWorkflows:
             logger.step(f"Prefect schedules: {deployment.schedules}")
             assert deployment.schedules, "Expected schedules to remain set"
 
-        # =============================================================================
         # Phase 8: Test pause/resume
-        # =============================================================================
-        logger.phase("⏸️  Phase 8: Testing pause...")
+        logger.phase("Phase 8: Testing pause")
 
         pause_response = e2e_api_client_no_override.post(
             f"/api/v1/ingestions/{ingestion_id}/pause"
@@ -253,7 +237,7 @@ class TestPrefectWorkflows:
         # Verify deployment paused in Prefect
         await verify_prefect_deployment_paused(deployment_id=deployment_id, logger=logger)
 
-        logger.phase("▶️  Resuming...")
+        logger.phase("Resuming")
 
         resume_response = e2e_api_client_no_override.post(
             f"/api/v1/ingestions/{ingestion_id}/resume"
@@ -266,10 +250,8 @@ class TestPrefectWorkflows:
         # Verify deployment resumed in Prefect
         await verify_prefect_deployment_active(deployment_id=deployment_id, logger=logger)
 
-        # =============================================================================
         # Phase 9: Delete ingestion
-        # =============================================================================
-        logger.phase("🗑️  Phase 9: Deleting ingestion...")
+        logger.phase("Phase 9: Deleting ingestion")
 
         delete_response = e2e_api_client_no_override.delete(
             f"/api/v1/ingestions/{ingestion_id}"
@@ -282,10 +264,8 @@ class TestPrefectWorkflows:
         # Verify deployment deleted in Prefect
         await verify_prefect_deployment_deleted(deployment_id=deployment_id, logger=logger)
 
-        # =============================================================================
         # Test Summary
-        # =============================================================================
-        logger.section("✅ E2E TEST PASSED: Complete Prefect Lifecycle")
+        logger.section("E2E TEST PASSED: Complete Prefect Lifecycle")
         print_test_summary([
             ("Test", "Complete Lifecycle"),
             ("Ingestion ID", ingestion_id),
@@ -295,10 +275,10 @@ class TestPrefectWorkflows:
             ("Files Processed", 3),
             ("Records Ingested", 3000),
             ("Table", table_identifier),
-            ("Schedule Changes", "hourly → daily 14:30"),
-            ("Pause/Resume", "✅ Verified"),
-            ("Cleanup", "✅ Deployment deleted"),
-            ("Test Status", "SUCCESS ✅")
+            ("Schedule Changes", "hourly -> daily 14:30"),
+            ("Pause/Resume", "Verified"),
+            ("Cleanup", "Deployment deleted"),
+            ("Test Status", "SUCCESS")
         ])
 
     async def test_pause_resume_workflow(
@@ -322,14 +302,12 @@ class TestPrefectWorkflows:
         6. Verify deployment active again
         """
         logger = E2ELogger()
-        logger.section("🧪 E2E TEST: Pause/Resume Workflow")
+        logger.section("E2E TEST: Pause/Resume Workflow")
 
         table_name = generate_unique_table_name("prefect_pause_resume")
 
-        # =============================================================================
         # Phase 1: Create ingestion with schedule
-        # =============================================================================
-        logger.phase("📝 Phase 1: Creating ingestion with schedule...")
+        logger.phase("Phase 1: Creating ingestion with schedule")
 
         ingestion = create_standard_ingestion(
             api_client=e2e_api_client_no_override,
@@ -354,17 +332,13 @@ class TestPrefectWorkflows:
         logger.success(f"Created ingestion: {ingestion_id}")
         logger.success(f"Deployment ID: {deployment_id}")
 
-        # =============================================================================
         # Phase 2: Verify deployment is active
-        # =============================================================================
-        logger.phase("🔍 Phase 2: Verifying deployment is active...")
+        logger.phase("Phase 2: Verifying deployment is active")
 
         await verify_prefect_deployment_active(deployment_id=deployment_id, logger=logger)
 
-        # =============================================================================
         # Phase 3: Pause ingestion
-        # =============================================================================
-        logger.phase("⏸️  Phase 3: Pausing ingestion...")
+        logger.phase("Phase 3: Pausing ingestion")
 
         pause_response = e2e_api_client_no_override.post(
             f"/api/v1/ingestions/{ingestion_id}/pause"
@@ -374,17 +348,13 @@ class TestPrefectWorkflows:
 
         logger.success("Pause request successful")
 
-        # =============================================================================
         # Phase 4: Verify deployment paused in Prefect
-        # =============================================================================
-        logger.phase("🔍 Phase 4: Verifying deployment paused in Prefect...")
+        logger.phase("Phase 4: Verifying deployment paused in Prefect")
 
         await verify_prefect_deployment_paused(deployment_id=deployment_id, logger=logger)
 
-        # =============================================================================
         # Phase 5: Resume ingestion
-        # =============================================================================
-        logger.phase("▶️  Phase 5: Resuming ingestion...")
+        logger.phase("Phase 5: Resuming ingestion")
 
         resume_response = e2e_api_client_no_override.post(
             f"/api/v1/ingestions/{ingestion_id}/resume"
@@ -394,17 +364,13 @@ class TestPrefectWorkflows:
 
         logger.success("Resume request successful")
 
-        # =============================================================================
         # Phase 6: Verify deployment active again in Prefect
-        # =============================================================================
-        logger.phase("🔍 Phase 6: Verifying deployment active in Prefect...")
+        logger.phase("Phase 6: Verifying deployment active in Prefect")
 
         await verify_prefect_deployment_active(deployment_id=deployment_id, logger=logger)
 
-        # =============================================================================
         # Cleanup
-        # =============================================================================
-        logger.phase("🧹 Cleanup: Deleting ingestion...")
+        logger.phase("Cleanup: Deleting ingestion")
 
         delete_response = e2e_api_client_no_override.delete(
             f"/api/v1/ingestions/{ingestion_id}"
@@ -413,15 +379,13 @@ class TestPrefectWorkflows:
 
         logger.success("Ingestion deleted")
 
-        # =============================================================================
         # Test Summary
-        # =============================================================================
-        logger.section("✅ E2E TEST PASSED: Pause/Resume Workflow")
+        logger.section("E2E TEST PASSED: Pause/Resume Workflow")
         print_test_summary([
             ("Test", "Pause/Resume Workflow"),
             ("Ingestion ID", ingestion_id),
             ("Deployment ID", deployment_id),
-            ("Pause Operation", "✅ Verified in Prefect"),
-            ("Resume Operation", "✅ Verified in Prefect"),
-            ("Test Status", "SUCCESS ✅")
+            ("Pause Operation", "Verified in Prefect"),
+            ("Resume Operation", "Verified in Prefect"),
+            ("Test Status", "SUCCESS")
         ])

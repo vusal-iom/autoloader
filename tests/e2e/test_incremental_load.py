@@ -82,15 +82,13 @@ class TestIncrementalLoadPrefect:
         - Deployment deleted on cleanup
         """
         logger = E2ELogger()
-        logger.section("🧪 E2E TEST: Incremental Load with Prefect")
+        logger.section("E2E TEST: Incremental Load with Prefect")
 
         table_name = generate_unique_table_name("prefect_incremental")
         deployment_id = None
 
-        # =============================================================================
         # Phase 1: Create ingestion with schedule
-        # =============================================================================
-        logger.phase("📝 Phase 1: Creating ingestion with schedule...")
+        logger.phase("Phase 1: Creating ingestion with schedule")
 
         ingestion = create_standard_ingestion(
             api_client=e2e_api_client_no_override,
@@ -119,10 +117,8 @@ class TestIncrementalLoadPrefect:
         deployment_id = ingestion["prefect_deployment_id"]
         logger.success(f"Prefect deployment ID: {deployment_id}")
 
-        # =============================================================================
         # Phase 2: Verify deployment exists in Prefect
-        # =============================================================================
-        logger.phase("🔍 Phase 2: Verifying deployment in Prefect server...")
+        logger.phase("Phase 2: Verifying deployment in Prefect server")
 
         deployment = await verify_prefect_deployment_exists(
             deployment_id=deployment_id,
@@ -133,13 +129,11 @@ class TestIncrementalLoadPrefect:
 
         await verify_prefect_deployment_active(deployment_id=deployment_id, logger=logger)
 
-        # =============================================================================
         # Phase 3: First Run - Trigger via Prefect
-        # =============================================================================
-        logger.section("📦 PHASE 3: Initial Ingestion via Prefect (3 files)")
-        logger.step(f"Initial files already uploaded: {len(sample_json_files)} files", always=True)
+        logger.section("PHASE 3: Initial Ingestion via Prefect (3 files)")
+        logger.step(f"Initial files uploaded: {len(sample_json_files)}", always=True)
 
-        logger.phase("🚀 Triggering first run via Prefect...")
+        logger.phase("Triggering first run via Prefect")
 
         trigger_response = e2e_api_client_no_override.post(
             f"/api/v1/ingestions/{ingestion_id}/run"
@@ -156,10 +150,8 @@ class TestIncrementalLoadPrefect:
         flow_run_id_1 = trigger_data["flow_run_id"]
         logger.success(f"Prefect flow run 1 triggered: {flow_run_id_1}")
 
-        # =============================================================================
         # Phase 4: Wait for first flow run completion
-        # =============================================================================
-        logger.phase("⏳ Phase 4: Waiting for first flow run completion...")
+        logger.phase("Phase 4: Waiting for first flow run completion")
 
         await wait_for_prefect_flow_completion(
             flow_run_id=flow_run_id_1,
@@ -173,10 +165,8 @@ class TestIncrementalLoadPrefect:
 
         logger.success(f"Found run 1 ID: {run1_id}")
 
-        # =============================================================================
         # Phase 5: Verify first run metrics
-        # =============================================================================
-        logger.phase("📊 Phase 5: Verifying first run metrics...")
+        logger.phase("Phase 5: Verifying first run metrics")
 
         run1 = wait_for_run_completion(
             e2e_api_client_no_override,
@@ -195,10 +185,8 @@ class TestIncrementalLoadPrefect:
         )
         logger.success("First run metrics verified")
 
-        # =============================================================================
         # Phase 6: Verify data after first run
-        # =============================================================================
-        logger.phase("🔍 Phase 6: Verifying data after first run...")
+        logger.phase("Phase 6: Verifying data after first run")
         table_identifier = get_table_identifier(ingestion)
 
         verify_table_data(
@@ -211,12 +199,10 @@ class TestIncrementalLoadPrefect:
         )
         logger.success("Data verification after first run passed")
 
-        # =============================================================================
         # Phase 7: Upload additional files
-        # =============================================================================
-        logger.section("📦 PHASE 7: Add New Files (2 more files)")
+        logger.section("PHASE 7: Add New Files (2 more files)")
 
-        logger.phase("📤 Uploading 2 additional files...")
+        logger.phase("Uploading 2 additional files")
         new_files = upload_json_files(
             minio_client=minio_client,
             test_bucket=test_bucket,
@@ -228,12 +214,10 @@ class TestIncrementalLoadPrefect:
         logger.success(f"Uploaded {len(new_files)} additional files")
         logger.step(f"Total files in bucket: {len(sample_json_files) + len(new_files)}", always=True)
 
-        # =============================================================================
         # Phase 8: Second Run - Trigger via Prefect (Incremental)
-        # =============================================================================
-        logger.section("📦 PHASE 8: Second Ingestion Run via Prefect (Incremental)")
+        logger.section("PHASE 8: Second Ingestion Run (Incremental)")
 
-        logger.phase("🚀 Triggering second run via Prefect...")
+        logger.phase("Triggering second run via Prefect")
 
         trigger_response_2 = e2e_api_client_no_override.post(
             f"/api/v1/ingestions/{ingestion_id}/run"
@@ -244,10 +228,8 @@ class TestIncrementalLoadPrefect:
         flow_run_id_2 = trigger_data_2["flow_run_id"]
         logger.success(f"Prefect flow run 2 triggered: {flow_run_id_2}")
 
-        # =============================================================================
         # Phase 9: Wait for second flow run completion
-        # =============================================================================
-        logger.phase("⏳ Phase 9: Waiting for second flow run completion...")
+        logger.phase("Phase 9: Waiting for second flow run completion")
 
         await wait_for_prefect_flow_completion(
             flow_run_id=flow_run_id_2,
@@ -261,10 +243,8 @@ class TestIncrementalLoadPrefect:
 
         logger.success(f"Found run 2 ID: {run2_id}")
 
-        # =============================================================================
         # Phase 10: Verify second run metrics (CRITICAL - Incremental)
-        # =============================================================================
-        logger.phase("📊 Phase 10: Verifying second run metrics (CRITICAL - Incremental Load)...")
+        logger.phase("Phase 10: Verifying second run metrics (Incremental Load)")
 
         run2 = wait_for_run_completion(
             e2e_api_client_no_override,
@@ -281,12 +261,10 @@ class TestIncrementalLoadPrefect:
             expected_errors=0,
             logger=logger
         )
-        logger.success("Second run metrics verified - INCREMENTAL LOAD WORKING!", always=True)
+        logger.success("Second run metrics verified - Incremental load working", always=True)
 
-        # =============================================================================
         # Phase 11: Verify total data (no duplicates)
-        # =============================================================================
-        logger.phase("🔍 Phase 11: Verifying total data (no duplicates)...")
+        logger.phase("Phase 11: Verifying total data (no duplicates)")
 
         # Refresh table metadata to see latest Iceberg snapshots
         spark_session.sql(f"REFRESH TABLE {table_identifier}")
@@ -308,12 +286,10 @@ class TestIncrementalLoadPrefect:
             f"Found duplicate IDs: {total_record_count - distinct_count} duplicates. " \
             f"This means data was ingested twice (FAILED)."
 
-        logger.success("Total data verification passed - NO DUPLICATES!", always=True)
+        logger.success("Total data verification passed - No duplicates", always=True)
 
-        # =============================================================================
         # Phase 12: Verify run history
-        # =============================================================================
-        logger.phase("📜 Phase 12: Verifying run history...")
+        logger.phase("Phase 12: Verifying run history")
         response = e2e_api_client_no_override.get(f"/api/v1/ingestions/{ingestion_id}/runs")
         assert response.status_code == 200
 
@@ -328,10 +304,8 @@ class TestIncrementalLoadPrefect:
 
         logger.success("Run history verified")
 
-        # =============================================================================
         # Phase 13: Delete ingestion and verify deployment cleanup
-        # =============================================================================
-        logger.phase("🗑️  Phase 13: Deleting ingestion...")
+        logger.phase("Phase 13: Deleting ingestion")
 
         delete_response = e2e_api_client_no_override.delete(
             f"/api/v1/ingestions/{ingestion_id}"
@@ -344,10 +318,8 @@ class TestIncrementalLoadPrefect:
         # Verify deployment deleted in Prefect
         await verify_prefect_deployment_deleted(deployment_id=deployment_id, logger=logger)
 
-        # =============================================================================
         # Test Summary
-        # =============================================================================
-        logger.section("✅ E2E TEST PASSED: Incremental Load with Prefect")
+        logger.section("E2E TEST PASSED: Incremental Load with Prefect")
         print_test_summary([
             ("Test", "Incremental Load with Prefect"),
             ("Ingestion ID", ingestion_id),
@@ -360,6 +332,6 @@ class TestIncrementalLoadPrefect:
             ("Run 2", "2 files, 2000 records (INCREMENTAL)"),
             ("Total", "5 files, 5000 records (NO DUPLICATES)"),
             ("Table", table_identifier),
-            ("Cleanup", "✅ Deployment deleted"),
-            ("Status", "SUCCESS ✅")
-        ], footer_message="🎉 INCREMENTAL LOAD + PREFECT VALIDATED!")
+            ("Cleanup", "Deployment deleted"),
+            ("Status", "SUCCESS")
+        ])

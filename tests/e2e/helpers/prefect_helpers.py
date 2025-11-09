@@ -54,7 +54,7 @@ async def wait_for_prefect_flow_completion(
 
                 if logger and logger.verbose:
                     elapsed = int(time.time() - start_time)
-                    print(f"  ⏱️  {elapsed}s - Prefect state: {state_name}")
+                    print(f"  {elapsed}s - Prefect state: {state_name}")
 
                 if state_name in PREFECT_COMPLETED_STATES:
                     elapsed = int(time.time() - start_time)
@@ -155,7 +155,7 @@ async def verify_prefect_deployment_active(
             "Expected at least one active schedule"
 
         if logger:
-            logger.success("Deployment is active ✅")
+            logger.success("Deployment is active")
 
 
 async def verify_prefect_deployment_paused(
@@ -182,7 +182,7 @@ async def verify_prefect_deployment_paused(
             f"Expected deployment to be paused, but it is active"
 
         if logger:
-            logger.success("Deployment is paused ✅")
+            logger.success("Deployment is paused")
 
 
 async def verify_prefect_deployment_deleted(
@@ -205,7 +205,7 @@ async def verify_prefect_deployment_deleted(
             pytest.fail(f"Deployment {deployment_id} should have been deleted but still exists")
         except ObjectNotFound:
             if logger:
-                logger.success("Deployment deleted from Prefect server ✅")
+                logger.success("Deployment deleted from Prefect server")
 
 
 # =============================================================================

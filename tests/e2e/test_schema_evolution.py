@@ -85,15 +85,13 @@ class TestSchemaEvolutionPrefect:
         - Deployment deleted on cleanup
         """
         logger = E2ELogger()
-        logger.section("🧪 E2E TEST: Schema Evolution with Prefect")
+        logger.section("E2E TEST: Schema Evolution with Prefect")
 
         table_name = generate_unique_table_name("prefect_schema_evolution")
         deployment_id = None
 
-        # =============================================================================
         # Phase 1: Create ingestion with schedule and evolution enabled
-        # =============================================================================
-        logger.phase("📝 Phase 1: Creating ingestion with schedule and evolution enabled...")
+        logger.phase("Phase 1: Creating ingestion with schedule and evolution enabled")
 
         ingestion = create_standard_ingestion(
             api_client=e2e_api_client_no_override,
@@ -125,10 +123,8 @@ class TestSchemaEvolutionPrefect:
         deployment_id = ingestion["prefect_deployment_id"]
         logger.success(f"Prefect deployment ID: {deployment_id}")
 
-        # =============================================================================
         # Phase 2: Verify deployment exists in Prefect
-        # =============================================================================
-        logger.phase("🔍 Phase 2: Verifying deployment in Prefect server...")
+        logger.phase("Phase 2: Verifying deployment in Prefect server")
 
         deployment = await verify_prefect_deployment_exists(
             deployment_id=deployment_id,
@@ -139,12 +135,10 @@ class TestSchemaEvolutionPrefect:
 
         await verify_prefect_deployment_active(deployment_id=deployment_id, logger=logger)
 
-        # =============================================================================
         # Phase 3: Upload files with BASE schema
-        # =============================================================================
-        logger.section("📦 PHASE 3: Initial Load (Base Schema - 5 fields)")
+        logger.section("PHASE 3: Initial Load (Base Schema - 5 fields)")
 
-        logger.phase("📤 Uploading 3 files with BASE schema (5 fields)...")
+        logger.phase("Uploading 3 files with BASE schema (5 fields)")
         base_files = upload_json_files(
             minio_client=minio_client,
             test_bucket=test_bucket,
@@ -157,10 +151,8 @@ class TestSchemaEvolutionPrefect:
         logger.success(f"Uploaded {len(base_files)} files with BASE schema")
         logger.step("Fields: id, timestamp, user_id, event_type, value", always=True)
 
-        # =============================================================================
         # Phase 4: First Run - Trigger via Prefect
-        # =============================================================================
-        logger.phase("🚀 Phase 4: Triggering first run via Prefect...")
+        logger.phase("Phase 4: Triggering first run via Prefect")
 
         trigger_response = e2e_api_client_no_override.post(
             f"/api/v1/ingestions/{ingestion_id}/run"
@@ -177,10 +169,8 @@ class TestSchemaEvolutionPrefect:
         flow_run_id_1 = trigger_data["flow_run_id"]
         logger.success(f"Prefect flow run 1 triggered: {flow_run_id_1}")
 
-        # =============================================================================
         # Phase 5: Wait for first flow run completion
-        # =============================================================================
-        logger.phase("⏳ Phase 5: Waiting for first flow run completion...")
+        logger.phase("Phase 5: Waiting for first flow run completion")
 
         await wait_for_prefect_flow_completion(
             flow_run_id=flow_run_id_1,
@@ -194,10 +184,8 @@ class TestSchemaEvolutionPrefect:
 
         logger.success(f"Found run 1 ID: {run1_id}")
 
-        # =============================================================================
         # Phase 6: Verify first run metrics
-        # =============================================================================
-        logger.phase("📊 Phase 6: Verifying first run metrics...")
+        logger.phase("Phase 6: Verifying first run metrics")
 
         run1 = wait_for_run_completion(
             e2e_api_client_no_override,
@@ -216,10 +204,8 @@ class TestSchemaEvolutionPrefect:
         )
         logger.success("First run metrics verified")
 
-        # =============================================================================
         # Phase 7: Verify initial schema (5 fields)
-        # =============================================================================
-        logger.phase("🔍 Phase 7: Verifying initial schema (5 fields)...")
+        logger.phase("Phase 7: Verifying initial schema (5 fields)")
         table_identifier = get_table_identifier(ingestion)
 
         # Refresh table metadata to see latest Iceberg snapshots
@@ -236,12 +222,10 @@ class TestSchemaEvolutionPrefect:
         )
         logger.success("Initial schema verified (5 base fields only)")
 
-        # =============================================================================
         # Phase 8: Upload files with EVOLVED schema
-        # =============================================================================
-        logger.section("📦 PHASE 8: Schema Evolution (Add region, metadata)")
+        logger.section("PHASE 8: Schema Evolution (Add region, metadata)")
 
-        logger.phase("📤 Uploading 2 files with EVOLVED schema (7 fields)...")
+        logger.phase("Uploading 2 files with EVOLVED schema (7 fields)")
         evolved_files = upload_json_files(
             minio_client=minio_client,
             test_bucket=test_bucket,
@@ -254,10 +238,8 @@ class TestSchemaEvolutionPrefect:
         logger.success(f"Uploaded {len(evolved_files)} files with EVOLVED schema")
         logger.step("NEW fields: region, metadata", always=True)
 
-        # =============================================================================
         # Phase 9: Second Run - Trigger via Prefect (with evolved schema)
-        # =============================================================================
-        logger.phase("🚀 Phase 9: Triggering second run via Prefect...")
+        logger.phase("Phase 9: Triggering second run via Prefect")
 
         trigger_response_2 = e2e_api_client_no_override.post(
             f"/api/v1/ingestions/{ingestion_id}/run"
@@ -268,10 +250,8 @@ class TestSchemaEvolutionPrefect:
         flow_run_id_2 = trigger_data_2["flow_run_id"]
         logger.success(f"Prefect flow run 2 triggered: {flow_run_id_2}")
 
-        # =============================================================================
         # Phase 10: Wait for second flow run completion
-        # =============================================================================
-        logger.phase("⏳ Phase 10: Waiting for second flow run completion...")
+        logger.phase("Phase 10: Waiting for second flow run completion")
 
         await wait_for_prefect_flow_completion(
             flow_run_id=flow_run_id_2,
@@ -285,10 +265,8 @@ class TestSchemaEvolutionPrefect:
 
         logger.success(f"Found run 2 ID: {run2_id}")
 
-        # =============================================================================
         # Phase 11: Verify second run metrics
-        # =============================================================================
-        logger.phase("📊 Phase 11: Verifying second run metrics...")
+        logger.phase("Phase 11: Verifying second run metrics")
 
         run2 = wait_for_run_completion(
             e2e_api_client_no_override,
@@ -307,10 +285,8 @@ class TestSchemaEvolutionPrefect:
         )
         logger.success("Second run metrics verified")
 
-        # =============================================================================
         # Phase 12: Verify schema evolution (7 fields)
-        # =============================================================================
-        logger.phase("🔍 Phase 12: Verifying schema evolution (7 fields)...")
+        logger.phase("Phase 12: Verifying schema evolution (7 fields)")
 
         # Refresh table metadata to see latest Iceberg snapshots
         spark_session.sql(f"REFRESH TABLE {table_identifier}")
@@ -323,12 +299,10 @@ class TestSchemaEvolutionPrefect:
             check_duplicates=True,
             logger=logger
         )
-        logger.success("Schema evolution verified - Table now has 7 fields!", always=True)
+        logger.success("Schema evolution verified - Table now has 7 fields", always=True)
 
-        # =============================================================================
         # Phase 13: Verify backward and forward compatibility
-        # =============================================================================
-        logger.phase("🔍 Phase 13: Verifying backward and forward compatibility...")
+        logger.phase("Phase 13: Verifying backward and forward compatibility")
 
         verify_schema_evolution(
             spark_session=spark_session,
@@ -341,10 +315,8 @@ class TestSchemaEvolutionPrefect:
             logger=logger
         )
 
-        # =============================================================================
         # Phase 14: Verify all data is queryable
-        # =============================================================================
-        logger.phase("🔍 Phase 14: Verifying all data is queryable...")
+        logger.phase("Phase 14: Verifying all data is queryable")
 
         result = df.groupBy("event_type").count().collect()
         logger.step(f"Event type distribution: {len(result)} types", always=True)
@@ -352,12 +324,10 @@ class TestSchemaEvolutionPrefect:
         region_counts = df.filter("region IS NOT NULL").groupBy("region").count().collect()
         logger.step(f"Region distribution: {len(region_counts)} regions (new records only)", always=True)
 
-        logger.success("All data is queryable - Schema evolution successful!")
+        logger.success("All data is queryable - Schema evolution successful")
 
-        # =============================================================================
         # Phase 15: Delete ingestion and verify deployment cleanup
-        # =============================================================================
-        logger.phase("🗑️  Phase 15: Deleting ingestion...")
+        logger.phase("Phase 15: Deleting ingestion")
 
         delete_response = e2e_api_client_no_override.delete(
             f"/api/v1/ingestions/{ingestion_id}"
@@ -370,10 +340,8 @@ class TestSchemaEvolutionPrefect:
         # Verify deployment deleted in Prefect
         await verify_prefect_deployment_deleted(deployment_id=deployment_id, logger=logger)
 
-        # =============================================================================
         # Test Summary
-        # =============================================================================
-        logger.section("✅ E2E TEST PASSED: Schema Evolution with Prefect")
+        logger.section("E2E TEST PASSED: Schema Evolution with Prefect")
         print_test_summary([
             ("Test", "Schema Evolution with Prefect"),
             ("Ingestion ID", ingestion_id),
@@ -385,9 +353,9 @@ class TestSchemaEvolutionPrefect:
             ("Run 1", "3 files, 3000 records, 5 fields"),
             ("Run 2", "2 files, 2000 records, SCHEMA EVOLVED to 7 fields"),
             ("Total", "5 files, 5000 records"),
-            ("Backward Compatibility", "✅ (old records have NULL for new fields)"),
-            ("Forward Compatibility", "✅ (new records have all fields)"),
+            ("Backward Compatibility", "PASS (old records have NULL for new fields)"),
+            ("Forward Compatibility", "PASS (new records have all fields)"),
             ("Table", table_identifier),
-            ("Cleanup", "✅ Deployment deleted"),
-            ("Status", "SUCCESS ✅")
-        ], footer_message="🎉 SCHEMA EVOLUTION + PREFECT VALIDATED!")
+            ("Cleanup", "Deployment deleted"),
+            ("Status", "SUCCESS")
+        ])
