@@ -75,6 +75,27 @@ class TestFeature:
 - Log every minor step (only log important phases)
 - Use emojis in logger output
 
+## Logging and Comments
+
+**Keep it clean, professional, and minimal.**
+
+- **No emojis** - anywhere in code, comments, logs, or test output
+- **Simple comments** - single-line phase markers, no decorative separators (`===`, `---`)
+- **Concise messages** - no trailing punctuation (`...`, `!!!`), no SHOUTING CASE
+- **Log phases, not steps** - let helpers and assertions do the detailed logging
+- **Professional tone** - factual, informative, suitable for CI/CD logs
+
+```python
+# Good example
+logger.section("E2E TEST: Incremental Load")
+logger.phase("Phase 1: Setup")
+logger.phase("Phase 2: Execute")
+logger.success("Run completed in 5s")
+print_test_summary([("Status", "SUCCESS")])
+```
+
+This keeps test output readable in terminals, CI/CD systems, and log aggregators.
+
 ## Directory Structure
 
 ```
