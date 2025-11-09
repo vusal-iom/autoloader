@@ -277,6 +277,28 @@ class SchemaEvolutionResponse(BaseModel):
         from_attributes = True
 
 
+class SchemaVersionResponse(BaseModel):
+    """Schema version history response."""
+    id: str
+    ingestion_id: str
+    version: int
+    detected_at: datetime
+    schema_json: Dict[str, Any]
+    changes_json: Optional[List[Dict[str, Any]]] = None
+    strategy_applied: Optional[str] = None
+    affected_files: Optional[List[str]] = None
+
+    class Config:
+        from_attributes = True
+
+
+class SchemaVersionListResponse(BaseModel):
+    """List of schema versions for an ingestion."""
+    versions: List[SchemaVersionResponse]
+    total: int
+    current_version: int
+
+
 # Cluster Information
 class ClusterInfo(BaseModel):
     """Cluster information."""

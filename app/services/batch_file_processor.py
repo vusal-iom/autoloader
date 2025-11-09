@@ -6,9 +6,11 @@ Replaces streaming Auto Loader with explicit batch processing.
 
 from typing import List, Dict, Optional
 from pyspark.sql import DataFrame
+from sqlalchemy.orm import Session
 from app.spark.connect_client import SparkConnectClient
 from app.services.file_state_service import FileStateService
 from app.services.schema_evolution_service import SchemaEvolutionService, SchemaComparison
+from app.repositories.schema_version_repository import SchemaVersionRepository
 from app.models.domain import Ingestion, ProcessedFile
 import logging
 import json
@@ -28,11 +30,15 @@ class BatchFileProcessor:
         self,
         spark_client: SparkConnectClient,
         state_service: FileStateService,
-        ingestion: Ingestion
+        ingestion: Ingestion,
+        db: Session,
+        schema_version_repo: Optional[SchemaVersionRepository] = None
     ):
         self.spark = spark_client
         self.state = state_service
         self.ingestion = ingestion
+        self.db = db
+        self.schema_version_repo = schema_version_repo or SchemaVersionRepository(db)
 
     def process_files(
         self,
@@ -119,8 +125,8 @@ class BatchFileProcessor:
             logger.warning(f"File {file_path} is empty, skipping write")
             return {'record_count': 0}
 
-        # Step 3: Write to Iceberg table
-        self._write_to_iceberg(df)
+        # Step 3: Write to Iceberg table (with schema tracking)
+        self._write_to_iceberg(df, file_path)
 
         return {'record_count': record_count}
 
@@ -191,12 +197,13 @@ class BatchFileProcessor:
 
         return reader.load(file_path)
 
-    def _write_to_iceberg(self, df: DataFrame):
+    def _write_to_iceberg(self, df: DataFrame, file_path: str):
         """
         Write DataFrame to Iceberg table with schema evolution support.
 
         Args:
             df: Spark DataFrame to write
+            file_path: Path of the file being processed (for schema version tracking)
         """
         table_identifier = f"{self.ingestion.destination_catalog}.{self.ingestion.destination_database}.{self.ingestion.destination_table}"
         spark = self.spark.connect()
@@ -208,8 +215,8 @@ class BatchFileProcessor:
             # Get schema evolution strategy
             strategy = getattr(self.ingestion, 'on_schema_change', 'ignore')
 
-            # Apply schema evolution based on strategy
-            self._apply_schema_evolution(spark, table_identifier, df, strategy)
+            # Apply schema evolution based on strategy (with tracking)
+            self._apply_schema_evolution(spark, table_identifier, df, strategy, file_path)
 
         writer = df.write.format("iceberg")
 
@@ -249,15 +256,23 @@ class BatchFileProcessor:
             logger.debug(f"Table {table_identifier} does not exist: {e}")
             return False
 
-    def _apply_schema_evolution(self, spark, table_identifier: str, df: DataFrame, strategy: str):
+    def _apply_schema_evolution(
+        self,
+        spark,
+        table_identifier: str,
+        df: DataFrame,
+        strategy: str,
+        file_path: str
+    ):
         """
-        Apply schema evolution based on strategy.
+        Apply schema evolution based on strategy and record version history.
 
         Args:
             spark: SparkSession
             table_identifier: Full table identifier
             df: DataFrame with new data schema
             strategy: Schema evolution strategy
+            file_path: Path of file that triggered the schema change
         """
         try:
             # Get current table schema
@@ -281,6 +296,73 @@ class BatchFileProcessor:
                 spark, table_identifier, comparison, strategy
             )
 
+            # Record schema version after successful evolution
+            # (only if strategy actually modifies the schema)
+            if strategy in ["append_new_columns", "sync_all_columns"]:
+                self._record_schema_version(
+                    spark,
+                    table_identifier,
+                    comparison,
+                    strategy,
+                    file_path
+                )
+
         except Exception as e:
             logger.error(f"Failed to apply schema evolution for {table_identifier}: {e}")
             raise
+
+    def _record_schema_version(
+        self,
+        spark,
+        table_identifier: str,
+        comparison: SchemaComparison,
+        strategy: str,
+        file_path: str
+    ):
+        """
+        Record schema version change in database.
+
+        Args:
+            spark: SparkSession
+            table_identifier: Full table identifier
+            comparison: SchemaComparison with detected changes
+            strategy: Schema evolution strategy that was applied
+            file_path: Path of file that triggered the change
+        """
+        try:
+            # Get next version number
+            next_version = self.schema_version_repo.get_next_version_number(self.ingestion.id)
+
+            # Get current schema after evolution
+            current_table = spark.table(table_identifier)
+            current_schema = current_table.schema
+
+            # Convert schema to JSON
+            schema_json = current_schema.jsonValue()
+
+            # Convert schema changes to dict list
+            changes = [change.to_dict() for change in comparison.get_changes()]
+
+            # Create schema version record
+            schema_version = self.schema_version_repo.create_version(
+                ingestion_id=self.ingestion.id,
+                version=next_version,
+                schema_json=schema_json,
+                changes=changes,
+                strategy_applied=strategy,
+                affected_files=[file_path]
+            )
+
+            # Update ingestion's current schema version
+            self.ingestion.schema_version = next_version
+            self.db.commit()
+
+            logger.info(
+                f"Recorded schema version {next_version} for ingestion {self.ingestion.id}. "
+                f"Changes: {len(changes)} modifications triggered by {file_path}"
+            )
+
+        except Exception as e:
+            logger.error(f"Failed to record schema version: {e}", exc_info=True)
+            # Don't fail the entire ingestion if version recording fails
+            # Just log the error and continue

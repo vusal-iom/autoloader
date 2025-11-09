@@ -55,7 +55,7 @@ def process_files_task(
         )
 
         state_service = FileStateService(db)
-        processor = BatchFileProcessor(spark_client, state_service, ingestion)
+        processor = BatchFileProcessor(spark_client, state_service, ingestion, db)
 
         # Process files
         metrics = processor.process_files(files_to_process, run_id=run_id)
