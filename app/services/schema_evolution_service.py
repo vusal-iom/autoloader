@@ -178,6 +178,10 @@ class SchemaEvolutionService:
         Returns:
             True if compatible, False otherwise
         """
+
+        old_type_lower = old_type.lower()
+        new_type_lower = new_type.lower()
+
         # Same type is always compatible
         if old_type == new_type:
             return True
@@ -192,8 +196,9 @@ class SchemaEvolutionService:
             'date': ['timestamp'],
         }
 
-        old_type_lower = old_type.lower()
-        new_type_lower = new_type.lower()
+        # Check equality after case normalization
+        if old_type_lower == new_type_lower:
+            return True
 
         return new_type_lower in compatible_transitions.get(old_type_lower, [])
 

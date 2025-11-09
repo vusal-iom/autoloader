@@ -209,6 +209,17 @@ class TestTypeCompatibility:
         assert SchemaEvolutionService.is_type_change_compatible("INT", "LONG")
         assert SchemaEvolutionService.is_type_change_compatible("String", "VARCHAR")
 
+    def test_same_type_different_case_is_compatible(self):
+        """Test that same type with different case is compatible (regression test for bug)."""
+        # This is the critical bug fix: same type with different case should be compatible
+        assert SchemaEvolutionService.is_type_change_compatible("INT", "int")
+        assert SchemaEvolutionService.is_type_change_compatible("int", "INT")
+        assert SchemaEvolutionService.is_type_change_compatible("String", "string")
+        assert SchemaEvolutionService.is_type_change_compatible("string", "STRING")
+        assert SchemaEvolutionService.is_type_change_compatible("LONG", "long")
+        assert SchemaEvolutionService.is_type_change_compatible("Double", "DOUBLE")
+        assert SchemaEvolutionService.is_type_change_compatible("VARCHAR", "varchar")
+
 
 class TestStrategyValidation:
     """Test strategy validation."""
