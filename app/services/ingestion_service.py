@@ -84,6 +84,7 @@ class IngestionService:
             schema_inference=data.format.schema.inference if data.format.schema else "auto",
             schema_evolution_enabled=data.format.schema.evolution_enabled if data.format.schema else True,
             schema_json=data.format.schema.schema_json if data.format.schema else None,
+            on_schema_change=data.on_schema_change.value,
             # Destination
             destination_catalog=data.destination.catalog,
             destination_database=data.destination.database,
@@ -331,6 +332,7 @@ class IngestionService:
             QualityConfig,
             PartitioningConfig,
             OptimizationConfig,
+            SchemaEvolutionStrategy,
         )
 
         return IngestionResponse(
@@ -384,6 +386,7 @@ class IngestionService:
                 alerts_enabled=ingestion.alerts_enabled,
                 alert_recipients=ingestion.alert_recipients or [],
             ),
+            on_schema_change=SchemaEvolutionStrategy(getattr(ingestion, 'on_schema_change', 'ignore')),
             metadata=IngestionMetadata(
                 checkpoint_location=ingestion.checkpoint_location,
                 last_run_id=ingestion.last_run_id,

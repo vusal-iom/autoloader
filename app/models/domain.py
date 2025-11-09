@@ -61,6 +61,7 @@ class Ingestion(Base):
     schema_inference = Column(String, default="auto")  # auto, manual
     schema_evolution_enabled = Column(Boolean, default=True)
     schema_json = Column(JSON, nullable=True)
+    on_schema_change = Column(String, nullable=False, default="ignore")  # ignore, append_new_columns, sync_all_columns, fail
 
     # Destination configuration
     destination_catalog = Column(String, nullable=False)
@@ -165,6 +166,8 @@ class SchemaVersion(Base):
 
     detected_at = Column(DateTime, nullable=False, server_default=func.now())
     schema_json = Column(JSON, nullable=False)
+    changes_json = Column(JSON, nullable=True)  # SchemaChange details as JSON
+    strategy_applied = Column(String, nullable=True)  # Which strategy was used
     affected_files = Column(JSON, nullable=True)
 
     # Resolution

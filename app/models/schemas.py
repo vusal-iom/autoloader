@@ -13,6 +13,14 @@ class IngestionStatus(str, Enum):
     ERROR = "error"
 
 
+class SchemaEvolutionStrategy(str, Enum):
+    """Schema evolution strategy for handling schema changes."""
+    IGNORE = "ignore"
+    APPEND_NEW_COLUMNS = "append_new_columns"
+    SYNC_ALL_COLUMNS = "sync_all_columns"
+    FAIL = "fail"
+
+
 class RunStatus(str, Enum):
     """Run status."""
     RUNNING = "running"
@@ -133,6 +141,7 @@ class IngestionCreate(BaseModel):
     destination: DestinationConfig
     schedule: ScheduleConfig
     quality: Optional[QualityConfig] = QualityConfig()
+    on_schema_change: SchemaEvolutionStrategy = SchemaEvolutionStrategy.IGNORE
 
 
 class IngestionUpdate(BaseModel):
@@ -167,6 +176,7 @@ class IngestionResponse(BaseModel):
     destination: DestinationConfig
     schedule: ScheduleConfig
     quality: QualityConfig
+    on_schema_change: SchemaEvolutionStrategy
 
     metadata: IngestionMetadata
 

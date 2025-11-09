@@ -8,6 +8,7 @@ from typing import List, Dict, Optional
 from pyspark.sql import DataFrame
 from app.spark.connect_client import SparkConnectClient
 from app.services.file_state_service import FileStateService
+from app.services.schema_evolution_service import SchemaEvolutionService, SchemaComparison
 from app.models.domain import Ingestion, ProcessedFile
 import logging
 import json
@@ -203,9 +204,17 @@ class BatchFileProcessor:
         # Check if table exists and handle schema evolution
         table_exists = self._table_exists(spark, table_identifier)
 
-        if table_exists and self.ingestion.schema_evolution_enabled:
-            # Perform explicit schema evolution if needed
-            self._evolve_schema_if_needed(spark, table_identifier, df)
+        if table_exists:
+            # Get schema evolution strategy
+            strategy = getattr(self.ingestion, 'on_schema_change', 'ignore')
+
+            # Validate strategy compatibility with format
+            SchemaEvolutionService.validate_strategy_compatibility(
+                self.ingestion.format_type, strategy
+            )
+
+            # Apply schema evolution based on strategy
+            self._apply_schema_evolution(spark, table_identifier, df, strategy)
 
         writer = df.write.format("iceberg")
 
@@ -245,37 +254,38 @@ class BatchFileProcessor:
             logger.debug(f"Table {table_identifier} does not exist: {e}")
             return False
 
-    def _evolve_schema_if_needed(self, spark, table_identifier: str, df: DataFrame):
+    def _apply_schema_evolution(self, spark, table_identifier: str, df: DataFrame, strategy: str):
         """
-        Evolve table schema by adding new columns if they exist in DataFrame.
+        Apply schema evolution based on strategy.
 
         Args:
             spark: SparkSession
             table_identifier: Full table identifier
-            df: DataFrame with potentially new columns
+            df: DataFrame with new data schema
+            strategy: Schema evolution strategy
         """
         try:
             # Get current table schema
             existing_table = spark.table(table_identifier)
-            existing_columns = {field.name.lower() for field in existing_table.schema.fields}
+            target_schema = existing_table.schema
+            source_schema = df.schema
 
-            # Get DataFrame schema
-            new_columns = []
-            for field in df.schema.fields:
-                if field.name.lower() not in existing_columns:
-                    new_columns.append(field)
+            # Compare schemas
+            comparison = SchemaEvolutionService.compare_schemas(source_schema, target_schema)
 
-            # Add new columns to table using ALTER TABLE
-            if new_columns:
-                logger.info(f"Schema evolution detected: Adding {len(new_columns)} new columns to {table_identifier}")
-                for field in new_columns:
-                    # Convert Spark data type to SQL type string
-                    col_type = field.dataType.simpleString()
-                    alter_sql = f"ALTER TABLE {table_identifier} ADD COLUMN {field.name} {col_type}"
-                    logger.debug(f"Executing: {alter_sql}")
-                    spark.sql(alter_sql)
-                    logger.info(f"Added column: {field.name} ({col_type})")
+            if not comparison.has_changes:
+                logger.debug("No schema changes detected")
+                return
+
+            logger.info(f"Schema changes detected: {len(comparison.added_columns)} added, "
+                       f"{len(comparison.removed_columns)} removed, "
+                       f"{len(comparison.modified_columns)} modified")
+
+            # Apply evolution strategy
+            SchemaEvolutionService.apply_schema_evolution(
+                spark, table_identifier, comparison, strategy
+            )
 
         except Exception as e:
-            logger.error(f"Failed to evolve schema for {table_identifier}: {e}")
+            logger.error(f"Failed to apply schema evolution for {table_identifier}: {e}")
             raise
