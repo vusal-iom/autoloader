@@ -20,6 +20,7 @@ from typing import Dict
 
 import pytest
 from fastapi.testclient import TestClient
+from prefect import get_client
 from pyspark.sql import SparkSession
 
 from tests.e2e.helpers import (
