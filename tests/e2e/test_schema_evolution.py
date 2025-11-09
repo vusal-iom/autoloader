@@ -27,11 +27,9 @@ IMPORTANT: This test commits data to the real database (not using transactional 
 because Prefect tasks create their own database sessions via SessionLocal().
 """
 
-import time
 import pytest
 from typing import Dict
 from fastapi.testclient import TestClient
-from prefect import get_client
 from pyspark.sql import SparkSession
 
 from .helpers import (
@@ -49,6 +47,8 @@ from .helpers import (
     verify_prefect_deployment_exists,
     verify_prefect_deployment_active,
     verify_prefect_deployment_deleted,
+    wait_for_prefect_flow_completion,
+    get_latest_run_id,
 )
 
 @pytest.mark.e2e
@@ -182,45 +182,17 @@ class TestSchemaEvolutionPrefect:
         # =============================================================================
         logger.phase("⏳ Phase 5: Waiting for first flow run completion...")
 
-        max_wait_time = 180
-        poll_interval = 3
-        start_time = time.time()
-        run1_id = None
+        await wait_for_prefect_flow_completion(
+            flow_run_id=flow_run_id_1,
+            logger=logger
+        )
 
-        async with get_client() as prefect_client:
-            while time.time() - start_time < max_wait_time:
-                try:
-                    flow_run = await prefect_client.read_flow_run(flow_run_id_1)
-                    state_name = flow_run.state.name if flow_run.state else "unknown"
-
-                    if logger.verbose:
-                        elapsed = int(time.time() - start_time)
-                        print(f"  ⏱️  {elapsed}s - Prefect state: {state_name}")
-
-                    if state_name in ["Completed", "COMPLETED"]:
-                        logger.success(f"Flow run 1 completed successfully")
-                        break
-                    elif state_name in ["Failed", "FAILED", "Crashed", "CRASHED"]:
-                        pytest.fail(f"Flow run 1 failed with state: {state_name}")
-
-                    time.sleep(poll_interval)
-
-                except Exception as e:
-                    pytest.fail(f"Error checking flow run status: {e}")
-
-            if run1_id is None:
-                logger.step("Fetching run ID from API...")
-                runs_response = e2e_api_client_no_override.get(
-                    f"/api/v1/ingestions/{ingestion_id}/runs"
-                )
-                assert runs_response.status_code == 200
-                runs = runs_response.json()
-                if runs:
-                    run1_id = runs[0]["id"]
-                    logger.success(f"Found run 1 ID: {run1_id}")
-
+        # Fetch run ID from API
+        run1_id = get_latest_run_id(e2e_api_client_no_override, ingestion_id)
         if run1_id is None:
-            pytest.fail(f"Flow run did not complete within {max_wait_time}s")
+            pytest.fail("Flow run completed but no run ID found in database")
+
+        logger.success(f"Found run 1 ID: {run1_id}")
 
         # =============================================================================
         # Phase 6: Verify first run metrics
@@ -301,48 +273,17 @@ class TestSchemaEvolutionPrefect:
         # =============================================================================
         logger.phase("⏳ Phase 10: Waiting for second flow run completion...")
 
-        start_time = time.time()
-        run2_id = None
+        await wait_for_prefect_flow_completion(
+            flow_run_id=flow_run_id_2,
+            logger=logger
+        )
 
-        async with get_client() as prefect_client:
-            while time.time() - start_time < max_wait_time:
-                try:
-                    flow_run = await prefect_client.read_flow_run(flow_run_id_2)
-                    state_name = flow_run.state.name if flow_run.state else "unknown"
-
-                    if logger.verbose:
-                        elapsed = int(time.time() - start_time)
-                        print(f"  ⏱️  {elapsed}s - Prefect state: {state_name}")
-
-                    if state_name in ["Completed", "COMPLETED"]:
-                        logger.success(f"Flow run 2 completed successfully")
-                        break
-                    elif state_name in ["Failed", "FAILED", "Crashed", "CRASHED"]:
-                        pytest.fail(f"Flow run 2 failed with state: {state_name}")
-
-                    time.sleep(poll_interval)
-
-                except Exception as e:
-                    pytest.fail(f"Error checking flow run status: {e}")
-
-            if run2_id is None:
-                logger.step("Fetching run ID from API...")
-                runs_response = e2e_api_client_no_override.get(
-                    f"/api/v1/ingestions/{ingestion_id}/runs"
-                )
-                assert runs_response.status_code == 200
-                runs = runs_response.json()
-                if len(runs) >= 2:
-                    # Get the latest run (should be run 2)
-                    # Runs are ordered by created_at DESC (newest first)
-                    for run in runs:
-                        if run["id"] != run1_id:
-                            run2_id = run["id"]
-                            break
-                    logger.success(f"Found run 2 ID: {run2_id}")
-
+        # Fetch run ID from API (exclude run1_id to get the latest different run)
+        run2_id = get_latest_run_id(e2e_api_client_no_override, ingestion_id, exclude_run_id=run1_id)
         if run2_id is None:
-            pytest.fail(f"Flow run 2 did not complete within {max_wait_time}s")
+            pytest.fail("Flow run 2 completed but no new run ID found in database")
+
+        logger.success(f"Found run 2 ID: {run2_id}")
 
         # =============================================================================
         # Phase 11: Verify second run metrics

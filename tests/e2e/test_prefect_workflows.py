@@ -16,12 +16,10 @@ IMPORTANT: This test commits data to the real database (not using transactional 
 because Prefect tasks create their own database sessions via SessionLocal().
 """
 
-import time
 from typing import Dict
 
 import pytest
 from fastapi.testclient import TestClient
-from prefect import get_client
 from pyspark.sql import SparkSession
 
 from tests.e2e.helpers import (
@@ -37,6 +35,8 @@ from tests.e2e.helpers import (
     verify_prefect_deployment_active,
     verify_prefect_deployment_paused,
     verify_prefect_deployment_deleted,
+    wait_for_prefect_flow_completion,
+    get_latest_run_id,
 )
 
 
@@ -156,48 +156,17 @@ class TestPrefectWorkflows:
         # =============================================================================
         logger.phase("⏳ Phase 4: Waiting for flow run completion...")
 
-        # Poll Prefect server for flow run status
-        max_wait_time = 180
-        poll_interval = 3
-        start_time = time.time()
-        run_id = None
+        await wait_for_prefect_flow_completion(
+            flow_run_id=flow_run_id,
+            logger=logger
+        )
 
-        async with get_client() as prefect_client:
-            while time.time() - start_time < max_wait_time:
-                try:
-                    flow_run = await prefect_client.read_flow_run(flow_run_id)
-                    state_name = flow_run.state.name if flow_run.state else "unknown"
-
-                    if logger.verbose:
-                        elapsed = int(time.time() - start_time)
-                        print(f"  ⏱️  {elapsed}s - Prefect state: {state_name}")
-
-                    if state_name in ["Completed", "COMPLETED"]:
-                        logger.success(f"Flow run completed successfully")
-                        # Run ID is created inside the flow, we'll fetch it from API
-                        break
-                    elif state_name in ["Failed", "FAILED", "Crashed", "CRASHED"]:
-                        pytest.fail(f"Flow run failed with state: {state_name}")
-
-                    time.sleep(poll_interval)
-
-                except Exception as e:
-                    pytest.fail(f"Error checking flow run status: {e}")
-
-            if run_id is None:
-                # Flow run completed but we need to get run_id from API
-                logger.step("Fetching run ID from API...")
-                runs_response = e2e_api_client_no_override.get(
-                    f"/api/v1/ingestions/{ingestion_id}/runs"
-                )
-                assert runs_response.status_code == 200
-                runs = runs_response.json()
-                if runs:
-                    run_id = runs[0]["id"]
-                    logger.success(f"Found run ID: {run_id}")
-
+        # Fetch run ID from API
+        run_id = get_latest_run_id(e2e_api_client_no_override, ingestion_id)
         if run_id is None:
-            pytest.fail(f"Flow run did not complete within {max_wait_time}s")
+            pytest.fail("Flow run completed but no run ID found in database")
+
+        logger.success(f"Found run ID: {run_id}")
 
         # =============================================================================
         # Phase 5: Verify run metrics via API
