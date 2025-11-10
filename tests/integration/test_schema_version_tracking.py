@@ -49,8 +49,9 @@ class TestSchemaVersionTracking:
         return ingestion
 
     def test_schema_version_recorded_on_new_columns(
-        self, test_db, spark_session, ingestion
+        self, test_db, spark_client, spark_session, ingestion
     ):
+
         """Test that schema version is recorded when new columns are added."""
         # Create initial table with base schema (use BIGINT to match JSON inference)
         spark_session.sql(f"DROP TABLE IF EXISTS {ingestion.destination_catalog}.{ingestion.destination_database}.{ingestion.destination_table}")
@@ -70,8 +71,6 @@ class TestSchemaVersionTracking:
         file_path = "test_file_with_email.json"  # Virtual path for tracking
 
         # Set up processor
-        from app.spark.connect_client import SparkConnectClient
-        spark_client = SparkConnectClient(spark_session=spark_session)
         state_service = FileStateService(test_db)
         processor = BatchFileProcessor(spark_client, state_service, ingestion, test_db)
 
@@ -97,7 +96,7 @@ class TestSchemaVersionTracking:
         assert ingestion.schema_version == 2
 
     def test_schema_version_not_recorded_on_ignore_strategy(
-        self, test_db, spark_session, ingestion
+        self, test_db, spark_client, spark_session, ingestion
     ):
         """Test that schema version is NOT recorded when strategy is 'ignore'."""
         # Change strategy to ignore
@@ -119,8 +118,6 @@ class TestSchemaVersionTracking:
         file_path = "test_file_with_extra.json"  # Virtual path for tracking
 
         # Process DataFrame
-        from app.spark.connect_client import SparkConnectClient
-        spark_client = SparkConnectClient(spark_session=spark_session)
         state_service = FileStateService(test_db)
         processor = BatchFileProcessor(spark_client, state_service, ingestion, test_db)
 
@@ -137,7 +134,7 @@ class TestSchemaVersionTracking:
         assert ingestion.schema_version == 1
 
     def test_schema_version_recorded_on_sync_strategy(
-        self, test_db, spark_session, ingestion
+        self, test_db, spark_client, spark_session, ingestion
     ):
         """Test schema version recording with sync_all_columns strategy."""
         # Change strategy to sync_all_columns
@@ -160,8 +157,6 @@ class TestSchemaVersionTracking:
         file_path = "test_file_new_schema.json"  # Virtual path for tracking
 
         # Process DataFrame
-        from app.spark.connect_client import SparkConnectClient
-        spark_client = SparkConnectClient(spark_session=spark_session)
         state_service = FileStateService(test_db)
         processor = BatchFileProcessor(spark_client, state_service, ingestion, test_db)
 
@@ -184,7 +179,7 @@ class TestSchemaVersionTracking:
         assert "REMOVED_COLUMN" in change_types
 
     def test_multiple_schema_versions_increment(
-        self, test_db, spark_session, ingestion
+        self, test_db, spark_client, spark_session, ingestion
     ):
         """Test that version numbers increment correctly over multiple changes."""
         # Create initial table (use BIGINT to match JSON inference)
@@ -196,8 +191,6 @@ class TestSchemaVersionTracking:
             ) USING iceberg
         """)
 
-        from app.spark.connect_client import SparkConnectClient
-        spark_client = SparkConnectClient(spark_session=spark_session)
         state_service = FileStateService(test_db)
         processor = BatchFileProcessor(spark_client, state_service, ingestion, test_db)
 
@@ -228,7 +221,7 @@ class TestSchemaVersionTracking:
         assert ingestion.schema_version == 3
 
     def test_no_schema_version_when_no_changes(
-        self, test_db, spark_session, ingestion
+        self, test_db, spark_client, spark_session, ingestion
     ):
         """Test that no version is recorded when schema doesn't change."""
         # Create initial table (use BIGINT to match JSON inference)
@@ -246,8 +239,6 @@ class TestSchemaVersionTracking:
         file_path = "test_file_same_schema.json"  # Virtual path for tracking
 
         # Process DataFrame
-        from app.spark.connect_client import SparkConnectClient
-        spark_client = SparkConnectClient(spark_session=spark_session)
         state_service = FileStateService(test_db)
         processor = BatchFileProcessor(spark_client, state_service, ingestion, test_db)
 
@@ -264,7 +255,7 @@ class TestSchemaVersionTracking:
         assert ingestion.schema_version == 1
 
     def test_schema_json_captured_correctly(
-        self, test_db, spark_session, ingestion
+        self, test_db, spark_client, spark_session, ingestion
     ):
         """Test that the full schema is captured correctly after evolution."""
         # Create initial table (use BIGINT to match JSON inference)
@@ -282,8 +273,6 @@ class TestSchemaVersionTracking:
         file_path = "test_file_with_email.json"  # Virtual path for tracking
 
         # Process DataFrame
-        from app.spark.connect_client import SparkConnectClient
-        spark_client = SparkConnectClient(spark_session=spark_session)
         state_service = FileStateService(test_db)
         processor = BatchFileProcessor(spark_client, state_service, ingestion, test_db)
 
