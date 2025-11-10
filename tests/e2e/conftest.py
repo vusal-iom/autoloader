@@ -231,7 +231,10 @@ def spark_connect_url() -> str:
 @pytest.fixture(scope="function")
 def spark_session(spark_connect_url: str, ensure_services_ready) -> Generator[SparkSession, None, None]:
     """
-    Create Spark Connect session for data verification.
+    Create Spark Connect session for E2E tests with full service checks.
+
+    Overrides the base spark_session fixture to ensure all services are ready
+    and uses E2E-specific app name.
 
     Uses Spark from docker-compose.test.yml on localhost:15002.
     """

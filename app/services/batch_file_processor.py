@@ -216,7 +216,8 @@ class BatchFileProcessor:
             strategy = getattr(self.ingestion, 'on_schema_change', 'ignore')
 
             # Apply schema evolution based on strategy (with tracking)
-            self._apply_schema_evolution(spark, table_identifier, df, strategy, file_path)
+            # Returns potentially modified DataFrame (e.g., columns dropped for 'ignore' strategy)
+            df = self._apply_schema_evolution(spark, table_identifier, df, strategy, file_path)
 
         writer = df.write.format("iceberg")
 
@@ -263,7 +264,7 @@ class BatchFileProcessor:
         df: DataFrame,
         strategy: str,
         file_path: str
-    ):
+    ) -> DataFrame:
         """
         Apply schema evolution based on strategy and record version history.
 
@@ -273,6 +274,9 @@ class BatchFileProcessor:
             df: DataFrame with new data schema
             strategy: Schema evolution strategy
             file_path: Path of file that triggered the schema change
+
+        Returns:
+            Modified DataFrame (e.g., with columns dropped for 'ignore' strategy)
         """
         try:
             # Get current table schema
@@ -285,13 +289,21 @@ class BatchFileProcessor:
 
             if not comparison.has_changes:
                 logger.debug("No schema changes detected")
-                return
+                return df
 
             logger.info(f"Schema changes detected: {len(comparison.added_columns)} added, "
                        f"{len(comparison.removed_columns)} removed, "
                        f"{len(comparison.modified_columns)} modified")
 
-            # Apply evolution strategy
+            # For 'ignore' strategy, select only columns that exist in target table
+            if strategy == "ignore":
+                target_columns = [field.name for field in target_schema.fields]
+                # Select columns from source that exist in target (in target order)
+                df = df.select(*[col for col in target_columns if col in df.columns])
+                logger.info(f"Strategy 'ignore': Dropped extra columns. Writing with {len(target_columns)} columns")
+                return df
+
+            # Apply evolution strategy for other strategies
             SchemaEvolutionService.apply_schema_evolution(
                 spark, table_identifier, comparison, strategy
             )
@@ -306,6 +318,8 @@ class BatchFileProcessor:
                     strategy,
                     file_path
                 )
+
+            return df
 
         except Exception as e:
             logger.error(f"Failed to apply schema evolution for {table_identifier}: {e}")
@@ -330,8 +344,8 @@ class BatchFileProcessor:
             file_path: Path of file that triggered the change
         """
         try:
-            # Get next version number
-            next_version = self.schema_version_repo.get_next_version_number(self.ingestion.id)
+            # Get next version number based on ingestion's current schema version
+            next_version = self.ingestion.schema_version + 1
 
             # Get current schema after evolution
             current_table = spark.table(table_identifier)

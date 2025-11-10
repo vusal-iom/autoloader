@@ -12,6 +12,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
 from fastapi.testclient import TestClient
 import httpx
+from pyspark.sql import SparkSession
 
 from app.main import app
 from app.database import Base, get_db
@@ -270,3 +271,37 @@ def check_prefect_work_pool(pool_name: str, timeout: int) -> bool:
         time.sleep(2)
 
     return False
+
+
+@pytest.fixture(scope="session")
+def spark_connect_url() -> str:
+    """Get Spark Connect URL from environment."""
+    return os.getenv("TEST_SPARK_CONNECT_URL", "sc://localhost:15002")
+
+
+@pytest.fixture(scope="function")
+def spark_session(spark_connect_url: str) -> Generator[SparkSession, None, None]:
+    """
+    Create Spark Connect session for data verification.
+
+    Uses Spark from docker-compose.test.yml on localhost:15002.
+    """
+    try:
+        spark = SparkSession.builder \
+            .remote(spark_connect_url) \
+            .appName("Integration-Test") \
+            .getOrCreate()
+
+        print(f"Connected to Spark: {spark_connect_url}")
+
+        yield spark
+
+        # Cleanup
+        spark.stop()
+        print("Stopped Spark session")
+
+    except Exception as e:
+        raise RuntimeError(
+            f"Failed to connect to Spark Connect at {spark_connect_url}: {e}\n"
+            "Ensure Spark is running: docker-compose -f docker-compose.test.yml up -d"
+        )
