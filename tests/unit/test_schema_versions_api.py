@@ -8,15 +8,15 @@ import uuid
 from datetime import datetime
 
 from app.repositories.schema_version_repository import SchemaVersionRepository
-from app.repositories.ingestion_repository import IngestionRepository
 from app.models.domain import Ingestion, IngestionStatus
 
 
 @pytest.fixture
 def ingestion(test_db):
     """Create test ingestion with unique ID."""
+    ingestion_id = f"test-ingestion-{uuid.uuid4()}"
     ingestion = Ingestion(
-        id=f"test-ingestion-{uuid.uuid4()}",
+        id=ingestion_id,
         tenant_id="test-tenant",
         name="Test API Ingestion",
         source_type="s3",
@@ -26,7 +26,10 @@ def ingestion(test_db):
         destination_database="default",
         destination_table="api_test_table",
         status=IngestionStatus.ACTIVE,
-        schema_version=3
+        schema_version=3,
+        cluster_id="test-cluster-id",
+        created_by="test-user",
+        checkpoint_location=f"/tmp/test-checkpoints/{ingestion_id}"
     )
     test_db.add(ingestion)
     test_db.commit()
@@ -107,9 +110,9 @@ class TestSchemaVersionsAPI:
     def test_get_all_schema_versions_empty(self, api_client, test_db):
         """Test getting versions for ingestion with no versions."""
         # Create ingestion without versions
-        repo = IngestionRepository(test_db)
+        ingestion_id = f"empty-ingestion-{uuid.uuid4()}"
         ingestion = Ingestion(
-            id=f"empty-ingestion-{uuid.uuid4()}",
+            id=ingestion_id,
             tenant_id="test-tenant",
             name="Empty Ingestion",
             source_type="s3",
@@ -119,7 +122,10 @@ class TestSchemaVersionsAPI:
             destination_database="default",
             destination_table="empty_table",
             status=IngestionStatus.ACTIVE,
-            schema_version=1
+            schema_version=1,
+            cluster_id="test-cluster-id",
+            created_by="test-user",
+            checkpoint_location=f"/tmp/test-checkpoints/{ingestion_id}"
         )
         test_db.add(ingestion)
         test_db.commit()
@@ -184,9 +190,9 @@ class TestSchemaVersionsAPI:
     def test_get_latest_schema_version_no_versions(self, api_client, test_db):
         """Test 404 when no versions exist."""
         # Create ingestion without versions
-        repo = IngestionRepository(test_db)
+        ingestion_id = f"no-versions-ingestion-{uuid.uuid4()}"
         ingestion = Ingestion(
-            id=f"no-versions-ingestion-{uuid.uuid4()}",
+            id=ingestion_id,
             tenant_id="test-tenant",
             name="No Versions Ingestion",
             source_type="s3",
@@ -196,7 +202,10 @@ class TestSchemaVersionsAPI:
             destination_database="default",
             destination_table="no_versions_table",
             status=IngestionStatus.ACTIVE,
-            schema_version=1
+            schema_version=1,
+            cluster_id="test-cluster-id",
+            created_by="test-user",
+            checkpoint_location=f"/tmp/test-checkpoints/{ingestion_id}"
         )
         test_db.add(ingestion)
         test_db.commit()
@@ -254,7 +263,6 @@ class TestSchemaVersionsAPI:
 
     def test_multiple_ingestions_isolated(self, api_client, test_db):
         """Test that versions are properly isolated between ingestions."""
-        repo_ingestion = IngestionRepository(test_db)
         repo_schema = SchemaVersionRepository(test_db)
 
         # Create two ingestions with unique IDs
@@ -272,7 +280,10 @@ class TestSchemaVersionsAPI:
             destination_database="default",
             destination_table="table1",
             status=IngestionStatus.ACTIVE,
-            schema_version=2
+            schema_version=2,
+            cluster_id="test-cluster-id",
+            created_by="test-user",
+            checkpoint_location=f"/tmp/test-checkpoints/{ingestion_id_1}"
         )
         ingestion2 = Ingestion(
             id=ingestion_id_2,
@@ -285,7 +296,10 @@ class TestSchemaVersionsAPI:
             destination_database="default",
             destination_table="table2",
             status=IngestionStatus.ACTIVE,
-            schema_version=1
+            schema_version=1,
+            cluster_id="test-cluster-id",
+            created_by="test-user",
+            checkpoint_location=f"/tmp/test-checkpoints/{ingestion_id_2}"
         )
         test_db.add(ingestion1)
         test_db.add(ingestion2)

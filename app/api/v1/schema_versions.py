@@ -54,6 +54,44 @@ async def get_schema_versions(
     )
 
 
+@router.get("/ingestions/{ingestion_id}/schema-versions/latest", response_model=SchemaVersionResponse)
+async def get_latest_schema_version(
+    ingestion_id: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Get the latest schema version for an ingestion.
+
+    Args:
+        ingestion_id: UUID of the ingestion
+        db: Database session
+
+    Returns:
+        SchemaVersionResponse with latest version details
+
+    Raises:
+        404: Ingestion not found or no schema versions exist
+    """
+    # Verify ingestion exists
+    ingestion_repo = IngestionRepository(db)
+    ingestion = ingestion_repo.get_by_id(ingestion_id)
+
+    if not ingestion:
+        raise HTTPException(status_code=404, detail=f"Ingestion {ingestion_id} not found")
+
+    # Get latest schema version
+    schema_repo = SchemaVersionRepository(db)
+    schema_version = schema_repo.get_latest_version(ingestion_id)
+
+    if not schema_version:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No schema versions found for ingestion {ingestion_id}"
+        )
+
+    return SchemaVersionResponse.model_validate(schema_version)
+
+
 @router.get("/ingestions/{ingestion_id}/schema-versions/{version}", response_model=SchemaVersionResponse)
 async def get_schema_version_by_number(
     ingestion_id: str,
@@ -89,44 +127,6 @@ async def get_schema_version_by_number(
         raise HTTPException(
             status_code=404,
             detail=f"Schema version {version} not found for ingestion {ingestion_id}"
-        )
-
-    return SchemaVersionResponse.model_validate(schema_version)
-
-
-@router.get("/ingestions/{ingestion_id}/schema-versions/latest", response_model=SchemaVersionResponse)
-async def get_latest_schema_version(
-    ingestion_id: str,
-    db: Session = Depends(get_db)
-):
-    """
-    Get the latest schema version for an ingestion.
-
-    Args:
-        ingestion_id: UUID of the ingestion
-        db: Database session
-
-    Returns:
-        SchemaVersionResponse with latest version details
-
-    Raises:
-        404: Ingestion not found or no schema versions exist
-    """
-    # Verify ingestion exists
-    ingestion_repo = IngestionRepository(db)
-    ingestion = ingestion_repo.get_by_id(ingestion_id)
-
-    if not ingestion:
-        raise HTTPException(status_code=404, detail=f"Ingestion {ingestion_id} not found")
-
-    # Get latest schema version
-    schema_repo = SchemaVersionRepository(db)
-    schema_version = schema_repo.get_latest_version(ingestion_id)
-
-    if not schema_version:
-        raise HTTPException(
-            status_code=404,
-            detail=f"No schema versions found for ingestion {ingestion_id}"
         )
 
     return SchemaVersionResponse.model_validate(schema_version)
