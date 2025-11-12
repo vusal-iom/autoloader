@@ -16,13 +16,9 @@ from app.services.schema_evolution_service import (
 )
 
 
-# Note: Using spark_session fixture from conftest.py (Spark Connect)
-# No local file creation needed - using createDataFrame directly
-
-
-def create_json_data(schema_type: str, num_batches: int = 2, id_offset: int = 0) -> List[Dict]:
+def create_test_data(schema_type: str, num_batches: int = 2, id_offset: int = 0) -> List[Dict]:
     """
-    Create JSON test data with different schemas.
+    Create test data with different schemas for all format types.
 
     Args:
         schema_type: 'base' (id, name, email) or 'evolved' (id, name, email, phone, address)
@@ -58,85 +54,11 @@ def create_json_data(schema_type: str, num_batches: int = 2, id_offset: int = 0)
     return records
 
 
-def create_csv_data(schema_type: str, num_batches: int = 2, id_offset: int = 0) -> List[Dict]:
-    """
-    Create CSV test data with different schemas.
-
-    Args:
-        schema_type: 'base' or 'evolved'
-        num_batches: Number of batches to create
-        id_offset: Offset to add to IDs (for generating distinct records)
-
-    Returns:
-        List of records as dictionaries
-    """
-    records = []
-    for i in range(num_batches):
-        if schema_type == "base":
-            batch_records = [
-                {
-                    'id': id_offset + i * 100 + j,
-                    'name': f"User{j}",
-                    'email': f"user{j}@test.com"
-                }
-                for j in range(10)
-            ]
-        elif schema_type == "evolved":
-            batch_records = [
-                {
-                    'id': id_offset + i * 100 + j,
-                    'name': f"User{j}",
-                    'email': f"user{j}@test.com",
-                    'phone': f"555-{j:04d}",
-                    'address': f"{j} Main St"
-                }
-                for j in range(10)
-            ]
-
-        records.extend(batch_records)
-
-    return records
-
-
-def create_parquet_data(schema_type: str, num_batches: int = 2, id_offset: int = 0) -> List[tuple]:
-    """
-    Create Parquet test data with different schemas.
-
-    Args:
-        schema_type: 'base' or 'evolved'
-        num_batches: Number of batches to create
-        id_offset: Offset to add to IDs (for generating distinct records)
-
-    Returns:
-        List of tuples (for createDataFrame)
-    """
-    records = []
-    for i in range(num_batches):
-        if schema_type == "base":
-            batch_records = [
-                (id_offset + i * 100 + j, f"User{j}", f"user{j}@test.com")
-                for j in range(10)
-            ]
-        elif schema_type == "evolved":
-            batch_records = [
-                (id_offset + i * 100 + j, f"User{j}", f"user{j}@test.com", f"555-{j:04d}", f"{j} Main St")
-                for j in range(10)
-            ]
-
-        records.extend(batch_records)
-
-    return records
-
-
 class TestIgnoreStrategy:
     """Test 'ignore' strategy - continues using original schema."""
 
-    @pytest.mark.parametrize("format_type,create_data_func", [
-        ("json", create_json_data),
-        ("csv", create_csv_data),
-        ("parquet", create_parquet_data),
-    ])
-    def test_ignore_strategy_drops_new_columns(self, spark_session, format_type, create_data_func):
+    @pytest.mark.parametrize("format_type", ["json", "csv", "parquet"])
+    def test_ignore_strategy_drops_new_columns(self, spark_session, format_type):
         """
         Test that 'ignore' strategy drops new columns from source files.
 
@@ -149,13 +71,8 @@ class TestIgnoreStrategy:
         table_name = f"test_catalog.default.ignore_test_{format_type}"
 
         # Phase 1: Initial load with base schema
-        base_data = create_data_func("base", num_batches=2)
-
-        # Create DataFrame based on format
-        if format_type == "parquet":
-            df = spark_session.createDataFrame(base_data, ["id", "name", "email"])
-        else:
-            df = spark_session.createDataFrame(base_data)
+        base_data = create_test_data("base", num_batches=2)
+        df = spark_session.createDataFrame(base_data)
 
         # Create Iceberg table
         df.writeTo(table_name).using("iceberg").create()
@@ -168,13 +85,8 @@ class TestIgnoreStrategy:
         assert initial_count == 20  # 2 batches * 10 records
 
         # Phase 2: Load evolved schema data (with 'ignore' strategy - implicit)
-        evolved_data = create_data_func("evolved", num_batches=2)
-
-        # Create DataFrame with evolved schema
-        if format_type == "parquet":
-            evolved_df = spark_session.createDataFrame(evolved_data, ["id", "name", "email", "phone", "address"])
-        else:
-            evolved_df = spark_session.createDataFrame(evolved_data)
+        evolved_data = create_test_data("evolved", num_batches=2)
+        evolved_df = spark_session.createDataFrame(evolved_data)
 
         # Select only the original columns (simulating 'ignore' behavior)
         evolved_df_filtered = evolved_df.select("id", "name", "email")
@@ -250,7 +162,7 @@ class TestAppendNewColumnsStrategy:
         table_name = "test_catalog.default.append_json_test"
 
         # Phase 1: Create table with base schema
-        base_data = create_json_data("base", num_batches=2)
+        base_data = create_test_data("base", num_batches=2)
         df = spark_session.createDataFrame(base_data)
         df.writeTo(table_name).using("iceberg").create()
 
@@ -260,7 +172,7 @@ class TestAppendNewColumnsStrategy:
         assert table_df.count() == 20
 
         # Phase 2: Create evolved data (with different IDs to avoid duplicates)
-        evolved_data = create_json_data("evolved", num_batches=2, id_offset=1000)
+        evolved_data = create_test_data("evolved", num_batches=2, id_offset=1000)
         evolved_df = spark_session.createDataFrame(evolved_data)
 
         # Apply schema evolution
@@ -429,10 +341,8 @@ class TestFormatSpecificBehavior:
         """Test CSV format with createDataFrame."""
         table_name = "test_catalog.default.csv_header_test"
 
-        # Create CSV data
-        base_data = create_csv_data("base", num_batches=1)
-
-        # Create DataFrame from data
+        # Create test data
+        base_data = create_test_data("base", num_batches=1)
         df = spark_session.createDataFrame(base_data)
         df.writeTo(table_name).using("iceberg").create()
 
@@ -447,10 +357,8 @@ class TestFormatSpecificBehavior:
         """Test JSON format with createDataFrame."""
         table_name = "test_catalog.default.json_multiline_test"
 
-        # Create JSON data
-        base_data = create_json_data("base", num_batches=1)
-
-        # Create DataFrame from data
+        # Create test data
+        base_data = create_test_data("base", num_batches=1)
         df = spark_session.createDataFrame(base_data)
         df.writeTo(table_name).using("iceberg").create()
 
