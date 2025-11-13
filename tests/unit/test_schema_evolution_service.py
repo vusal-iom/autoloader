@@ -221,37 +221,6 @@ class TestTypeCompatibility:
         assert SchemaEvolutionService.is_type_change_compatible("VARCHAR", "varchar")
 
 
-class TestStrategyValidation:
-    """Test strategy validation."""
-
-    def test_evolution_strategies_require_iceberg(self):
-        """Test that evolution strategies require Iceberg format."""
-        with pytest.raises(ValueError, match="requires Iceberg"):
-            SchemaEvolutionService.validate_strategy_compatibility("parquet", "append_new_columns")
-
-        with pytest.raises(ValueError, match="requires Iceberg"):
-            SchemaEvolutionService.validate_strategy_compatibility("csv", "sync_all_columns")
-
-    def test_ignore_and_fail_work_with_any_format(self):
-        """Test that ignore and fail strategies work with any format."""
-        # Should not raise
-        SchemaEvolutionService.validate_strategy_compatibility("parquet", "ignore")
-        SchemaEvolutionService.validate_strategy_compatibility("csv", "fail")
-        SchemaEvolutionService.validate_strategy_compatibility("json", "ignore")
-
-    def test_evolution_strategies_work_with_iceberg(self):
-        """Test that evolution strategies work with Iceberg."""
-        # Should not raise
-        SchemaEvolutionService.validate_strategy_compatibility("iceberg", "append_new_columns")
-        SchemaEvolutionService.validate_strategy_compatibility("iceberg", "sync_all_columns")
-
-    def test_case_insensitive_format_check(self):
-        """Test that format validation is case-insensitive."""
-        # Should not raise
-        SchemaEvolutionService.validate_strategy_compatibility("ICEBERG", "append_new_columns")
-        SchemaEvolutionService.validate_strategy_compatibility("Iceberg", "sync_all_columns")
-
-
 class TestSchemaMismatchError:
     """Test SchemaMismatchError exception."""
 

@@ -333,25 +333,3 @@ class SchemaEvolutionService:
                         raise
                 else:
                     raise IncompatibleTypeChangeError(col_name, old_type, new_type)
-
-    @staticmethod
-    def validate_strategy_compatibility(format_type: str, strategy: str) -> None:
-        """
-        Validate that strategy is compatible with table format.
-
-        Args:
-            format_type: Table format (iceberg, parquet, etc.)
-            strategy: Schema evolution strategy
-
-        Raises:
-            ValueError: If strategy is not compatible with format
-        """
-        # Evolution strategies require Iceberg
-        evolution_strategies = ["append_new_columns", "sync_all_columns"]
-
-        if strategy in evolution_strategies and format_type.lower() != "iceberg":
-            raise ValueError(
-                f"Strategy '{strategy}' requires Iceberg table format. "
-                f"Current format: {format_type}. "
-                f"Please use 'ignore' or 'fail' strategy, or change destination format to Iceberg."
-            )
