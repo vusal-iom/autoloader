@@ -10,3 +10,5 @@ IMPORTANT RULES:
 7. Ask if user wants the next test
 
 Never write multiple tests at once. Always run each test before proceeding.
+
+If you don't follow these rules strictly you will be penalized!
