@@ -208,19 +208,28 @@ When testing schema comparison results, prefer using `comparison.get_changes()` 
 - Testing very specific implementation details that aren't exposed via public API
 - Debugging test failures to understand root cause
 
-**Example:**
+**Preferred Pattern: Bulk Comparison with `to_dict()`**
+
+Use `to_dict()` for comprehensive, readable assertions in a single comparison:
 
 ```python
-# ✅ PREFERRED: Test via public API
-changes = comparison.get_changes()
-assert len(changes) == 3
-assert all(c.change_type == SchemaChangeType.NEW_COLUMN for c in changes)
-
-# ⚠️ USE SPARINGLY: Direct internal access
-assert len(comparison.added_columns) == 3
-tags_field = next(f for f in comparison.added_columns if f.name == "tags")
-assert isinstance(tags_field.dataType, ArrayType)  # When type checking is critical
+# ✅ BEST: Bulk comparison using to_dict()
+actual_changes = [c.to_dict() for c in comparison.get_changes()]
+expected_changes = [
+    {"change_type": "NEW_COLUMN", "column_name": "email", "old_type": None, "new_type": "string"},
+    {"change_type": "NEW_COLUMN", "column_name": "created_at", "old_type": None, "new_type": "timestamp"},
+    {"change_type": "NEW_COLUMN", "column_name": "tags", "old_type": None, "new_type": "array<string>"},
+]
+assert actual_changes == expected_changes
 ```
+
+**Why this is better:**
+- Single assertion tests change_type, column_name, old_type, and new_type simultaneously
+- Visually clear: see entire expected output at a glance
+- Better error messages: pytest shows exact dict diff on failure
+- Tests serialization behavior (to_dict() works correctly)
+- No need to iterate through lists, sort, or use multiple assertions
+- Order is deterministic from get_changes()
 
 ## Test Data Strategy
 
