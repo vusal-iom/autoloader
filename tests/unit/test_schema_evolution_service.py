@@ -9,10 +9,7 @@ from pyspark.sql.types import (
     DoubleType, TimestampType, BooleanType, FloatType, ArrayType, MapType
 )
 
-from app.services.schema_evolution_service import (
-    SchemaEvolutionService,
-    SchemaChangeType,
-)
+from app.services.schema_evolution_service import SchemaEvolutionService
 
 
 # ============================================================================
@@ -86,11 +83,9 @@ class TestSchemaComparison:
         # Compare schemas
         comparison = SchemaEvolutionService.compare_schemas(schema1, schema2)
 
-        # Assert no changes detected
-        assert comparison.has_changes is False, "Identical schemas should have no changes"
-
-        changes = comparison.get_changes()
-        assert len(changes) == 0, "Should return empty list for identical schemas"
+        # Assert no changes via bulk comparison
+        assert comparison.has_changes is False
+        assert [c.to_dict() for c in comparison.get_changes()] == []
 
     def test_compare_schemas_new_columns(self):
         """
@@ -124,32 +119,17 @@ class TestSchemaComparison:
         comparison = SchemaEvolutionService.compare_schemas(source_schema, target_schema)
 
         # Assert changes detected
-        assert comparison.has_changes is True, "Should detect new columns as changes"
+        assert comparison.has_changes is True
 
-        # Test via public API - primary assertion method
-        changes = comparison.get_changes()
-        assert len(changes) == 5, "Should detect 5 new columns"
-
-        # All changes should be NEW_COLUMN type
-        assert all(
-            change.change_type == SchemaChangeType.NEW_COLUMN for change in changes
-        ), "All changes should be NEW_COLUMN type"
-
-        # Verify all expected columns are present
-        change_names = {c.column_name for c in changes}
-        expected_new_columns = {
-            "email", "created_at", "tags", "metadata", "column_with_special_chars"
-        }
-        assert change_names == expected_new_columns, f"Expected {expected_new_columns}, got {change_names}"
-
-        # Verify change details
-        email_change = next(c for c in changes if c.column_name == "email")
-        assert email_change.new_type == "string", "Should capture new column type"
-        assert email_change.old_type is None, "Old type should be None for new columns"
-
-        # Verify complex types are preserved (using internal fields when type checking is critical)
-        tags_field = next(f for f in comparison.added_columns if f.name == "tags")
-        assert isinstance(tags_field.dataType, ArrayType), "Array type should be preserved"
-
-        metadata_field = next(f for f in comparison.added_columns if f.name == "metadata")
-        assert isinstance(metadata_field.dataType, StructType), "Struct type should be preserved"
+        # Expected changes
+        actual_changes = [c.to_dict() for c in comparison.get_changes()]
+        expected_changes = [
+            {"change_type": "NEW_COLUMN", "column_name": "email", "old_type": None, "new_type": "string"},
+            {"change_type": "NEW_COLUMN", "column_name": "created_at", "old_type": None, "new_type": "timestamp"},
+            {"change_type": "NEW_COLUMN", "column_name": "tags", "old_type": None, "new_type": "array<string>"},
+            {"change_type": "NEW_COLUMN", "column_name": "metadata", "old_type": None,
+             "new_type": "struct<version:int,source:string>"},
+            {"change_type": "NEW_COLUMN", "column_name": "column_with_special_chars", "old_type": None,
+             "new_type": "string"},
+        ]
+        assert actual_changes == expected_changes
