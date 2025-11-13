@@ -188,6 +188,40 @@ The schema evolution module is critical for maintaining data integrity during au
 - **Business Value**: Safe testing of evolution strategies
 - **Output**: Planned DDL statements, impact analysis
 
+## Testing Methodology
+
+### Public API vs Internal Implementation
+
+**Preferred Approach: Test Public APIs**
+
+When testing schema comparison results, prefer using `comparison.get_changes()` over directly accessing internal fields (`added_columns`, `removed_columns`, `modified_columns`).
+
+**Rationale:**
+- **Behavior-focused**: Tests what changed, not how it's stored internally
+- **API stability**: Tests the public interface that actual code consumes
+- **Maintainability**: If internal structure changes but API stays consistent, tests remain valid
+- **Cleaner assertions**: Single normalized list instead of multiple field checks
+- **Avoids redundancy**: No need to separately test the public method if internals are already tested
+
+**When to access internal fields:**
+- Verifying type preservation for complex types (ArrayType, StructType instances)
+- Testing very specific implementation details that aren't exposed via public API
+- Debugging test failures to understand root cause
+
+**Example:**
+
+```python
+# ✅ PREFERRED: Test via public API
+changes = comparison.get_changes()
+assert len(changes) == 3
+assert all(c.change_type == SchemaChangeType.NEW_COLUMN for c in changes)
+
+# ⚠️ USE SPARINGLY: Direct internal access
+assert len(comparison.added_columns) == 3
+tags_field = next(f for f in comparison.added_columns if f.name == "tags")
+assert isinstance(tags_field.dataType, ArrayType)  # When type checking is critical
+```
+
 ## Test Data Strategy
 
 ### Schema Test Fixtures
