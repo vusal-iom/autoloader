@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## CRITICAL
+
+Always double check what you do! Ask yourself that what you do is make sense in the context of your work.
+
 ## Project Overview
 
 IOMETE Autoloader is a zero-code, UI-driven (and API) data ingestion system that enables users to automatically load files from cloud storage (AWS S3, Azure Blob, GCS) into Apache Iceberg tables without writing Spark code.
