@@ -99,16 +99,12 @@ class TestSchemaEvolutionApply:
             assert all(row["created_at"] is None for row in old_records), "Old records should have NULL for created_at"
             print(f"VERIFY 2: Old records have NULL for new columns")
 
-            # 3. Can insert new records with all columns
-            # NOTE: Must specify column names explicitly because column order may differ
-            spark_session.sql(f"""
-                INSERT INTO {table_id} (id, name, email, created_at)
-                VALUES (4, 'David', 'david@example.com', '2024-01-16T14:00:00')
-            """)
-            new_record = updated_table.filter("id = 4").collect()[0]
-            assert new_record["name"] == "David"
-            assert new_record["email"] == "david@example.com"
-            assert new_record["created_at"] == "2024-01-16T14:00:00"
+            # 3. Can insert the DataFrame with evolved schema
+            df.writeTo(table_id).append()
+            new_record = updated_table.filter("id = 3").collect()[0]
+            assert new_record["name"] == "Charlie"
+            assert new_record["email"] == "charlie@example.com"
+            assert new_record["created_at"] == "2024-01-15T10:30:00"
             print(f"VERIFY 3: Can insert new records with all columns")
 
             # 4. No data loss (should have 3 records total: 2 initial + 1 new)
