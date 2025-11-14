@@ -7,7 +7,7 @@ Then create a detailed markdown document following this structure:
 - List all test cases with WHY they exist and WHAT they cover
 - Use P0/P1/P2 prioritization
 - Focus on business value and edge cases
-- Save as `docs/test-strategies/unit/[module]_test_strategy.md`
+- Save as `docs/test-strategies/unit/[module].md`
 
 Each test case should explain:
 - Why this test exists (business reason)
