@@ -18,4 +18,7 @@ Each test case should explain:
 - Expected behavior
 - Edge cases to consider
 
-Add a brief implementation details. Learn the existing best practices and look other integration tests 
+Add a brief implementation details. Learn the existing best practices and look other integration tests
+
+
+Important: do not implement any code at this stage

@@ -14,3 +14,5 @@ Each test case should explain:
 - What functionality it validates
 - Expected behavior
 - Edge cases to consider
+
+Important: do not implement any code at this stage
