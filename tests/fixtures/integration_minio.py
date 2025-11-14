@@ -4,6 +4,7 @@ from typing import Generator, Dict
 import boto3
 import pytest
 
+from .ensure_services_ready import ensure_services_ready
 
 @pytest.fixture(scope="session")
 def minio_config() -> Dict[str, str]:

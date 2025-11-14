@@ -15,6 +15,18 @@ from tests.fixtures.integration_db import (
     api_client
 )
 
+from tests.fixtures.integration_spark import (
+    spark_connect_url,
+    spark_client,
+    spark_session
+)
+
+from tests.fixtures.integration_minio import (
+    minio_config,
+    minio_client,
+    lakehouse_bucket
+)
+
 # Import service readiness checks (if integration tests need Docker services)
 from tests.fixtures.ensure_services_ready import ensure_services_ready
 
@@ -30,4 +42,14 @@ __all__ = [
     "api_client",
     # Service health (if needed)
     "ensure_services_ready",
+
+    # Spark
+    "spark_connect_url",
+    "spark_client",
+    "spark_session",
+
+    # Mino
+    "minio_config",
+    "minio_client",
+    "lakehouse_bucket"
 ]

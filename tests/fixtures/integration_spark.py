@@ -4,7 +4,8 @@ import pytest
 from pyspark.sql import SparkSession
 
 from app.spark.connect_client import SparkConnectClient
-
+from .ensure_services_ready import ensure_services_ready
+from .integration_minio import lakehouse_bucket
 
 @pytest.fixture(scope="session")
 def spark_connect_url() -> str:
@@ -12,7 +13,7 @@ def spark_connect_url() -> str:
 
 
 @pytest.fixture(scope="session")
-def spark_client(spark_connect_url: str) -> Generator[SparkConnectClient, None, None]:
+def spark_client(ensure_services_ready, lakehouse_bucket, spark_connect_url: str) -> Generator[SparkConnectClient, None, None]:
 
     try:
         client = SparkConnectClient(connect_url=spark_connect_url, token="")
