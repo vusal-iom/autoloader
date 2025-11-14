@@ -127,12 +127,12 @@ def ensure_services_ready():
         }
     }
 
-    print("\n🔍 Checking service health...")
+    print("Checking service health...")
 
     # Check MinIO
     print("  → MinIO: ", end="")
     if check_http_service(services["MinIO"]["url"], services["MinIO"]["timeout"]):
-        print("✅ Ready")
+        print("Ready")
     else:
         raise RuntimeError(
             "MinIO not ready. Please start services:\n"
@@ -142,7 +142,7 @@ def ensure_services_ready():
     # Check PostgreSQL
     print("  → PostgreSQL: ", end="")
     if check_postgres_service(services["PostgreSQL"]["url"], services["PostgreSQL"]["timeout"]):
-        print("✅ Ready")
+        print("Ready")
     else:
         raise RuntimeError(
             "PostgreSQL not ready. Please start services:\n"
@@ -152,7 +152,7 @@ def ensure_services_ready():
     # Check Spark UI (indicates Spark Connect is running)
     print("  → Spark Connect: ", end="")
     if check_http_service(services["Spark UI"]["url"], services["Spark UI"]["timeout"]):
-        print("✅ Ready")
+        print("Ready")
     else:
         raise RuntimeError(
             "Spark Connect not ready. Please start services:\n"
@@ -163,7 +163,7 @@ def ensure_services_ready():
     # Check Prefect API (server ready)
     print("  → Prefect Server: ", end="")
     if check_http_service(services["Prefect"]["url"], services["Prefect"]["timeout"]):
-        print("✅ Ready")
+        print("Ready")
     else:
         raise RuntimeError(
             "Prefect server not ready. Please start services:\n"
@@ -173,14 +173,14 @@ def ensure_services_ready():
     # Check Prefect work pool exists (worker has initialized)
     print("  → Prefect Work Pool: ", end="")
     if check_prefect_work_pool("default-work-pool", timeout=60):
-        print("✅ Ready")
+        print("Ready")
     else:
         raise RuntimeError(
             "Prefect work pool not ready. Worker may still be initializing.\n"
             "  Wait a moment and try again, or check: docker logs autoloader-test-prefect-worker"
         )
 
-    print("✅ All services ready!\n")
+    print("All services ready!")
 
     yield True
 

@@ -1,5 +1,7 @@
 # E2E Integration Tests
 
+> **See also**: [Parent Test Guidelines](../CLAUDE.md) for logging best practices and NO emoji policy.
+
 ## Rules (Non-Negotiable)
 
 1. **API-Only**: All operations through API. Never query database directly.
@@ -11,7 +13,7 @@
 
 ```python
 from tests.e2e.helpers import (
-    E2ELogger, create_standard_ingestion, trigger_run,
+    TestLogger, create_standard_ingestion, trigger_run,
     wait_for_run_completion, assert_run_metrics, verify_table_data,
     generate_unique_table_name, get_table_identifier, print_test_summary
 )
@@ -19,7 +21,7 @@ from tests.e2e.helpers import (
 @pytest.mark.e2e
 class TestFeature:
     def test_scenario(self, api_client, minio_client, test_bucket, spark_session, ...):
-        logger = E2ELogger()
+        logger = TestLogger()
         logger.section("E2E TEST: My Feature")
 
         # Phase 1: Setup
@@ -54,24 +56,6 @@ class TestFeature:
 - Skip Spark verification
 - Reimplement helpers
 - Use emojis or excessive logging
-
-## Logging and Comments
-
-**Keep it clean, professional, and minimal.**
-
-- **No emojis** - anywhere in code, comments, logs, or test output
-- **Simple comments** - single-line phase markers, no decorative separators (`===`, `---`)
-- **Concise messages** - no trailing punctuation (`...`, `!!!`), no SHOUTING CASE
-- **Log phases, not steps** - let helpers and assertions do the detailed logging
-- **Professional tone** - factual, informative, suitable for CI/CD logs
-
-```python
-logger.section("E2E TEST: Incremental Load")
-logger.phase("Phase 1: Setup")
-logger.phase("Phase 2: Execute")
-logger.success("Run completed in 5s")
-print_test_summary([("Status", "SUCCESS")])
-```
 
 ## Helper Reference
 
@@ -131,8 +115,9 @@ pytest tests/e2e/ -v
 # Run specific test
 pytest tests/e2e/test_incremental_load.py -v
 
-# With verbose logging
+# With verbose logging (both are supported)
 E2E_VERBOSE=true pytest tests/e2e/ -v
+TEST_VERBOSE=true pytest tests/e2e/ -v
 ```
 
 ## Common Fixtures

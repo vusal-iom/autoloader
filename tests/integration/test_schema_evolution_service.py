@@ -37,14 +37,14 @@ class TestSchemaEvolutionApply:
                     name STRING
                 ) USING iceberg
             """)
-            print(f"\n✓ Created table: {table_id}")
+            print(f"Created table: {table_id}")
 
             # Insert initial data
             spark_session.sql(f"""
                 INSERT INTO {table_id}
                 VALUES (1, 'Alice'), (2, 'Bob')
             """)
-            print(f"✓ Inserted 2 initial records")
+            print(f"Inserted 2 initial records")
 
             # ============================================================
             # ACTION: Create evolved schema and apply evolution
@@ -59,7 +59,7 @@ class TestSchemaEvolutionApply:
                 }
             ]
             df = spark_session.createDataFrame(json_data)
-            print(f"✓ Created DataFrame with evolved schema")
+            print(f"Created DataFrame with evolved schema")
 
             # Get target table schema
             target_schema = spark_session.table(table_id).schema
@@ -68,7 +68,7 @@ class TestSchemaEvolutionApply:
             comparison = SchemaEvolutionService.compare_schemas(df.schema, target_schema)
             assert comparison.has_changes, "Should detect schema changes"
             assert len(comparison.added_columns) == 2, "Should detect 2 new columns (email, created_at)"
-            print(f"✓ Schema comparison detected {len(comparison.added_columns)} new columns")
+            print(f"Schema comparison detected {len(comparison.added_columns)} new columns")
 
             # Apply evolution with append_new_columns strategy
             SchemaEvolutionService.apply_schema_evolution(
@@ -77,7 +77,7 @@ class TestSchemaEvolutionApply:
                 comparison=comparison,
                 strategy="append_new_columns"
             )
-            print(f"✓ Applied schema evolution (append_new_columns)")
+            print(f"Applied schema evolution (append_new_columns)")
 
             # ============================================================
             # VERIFY: Schema updated correctly
@@ -90,14 +90,14 @@ class TestSchemaEvolutionApply:
             assert "name" in field_names, "name column should exist"
             assert "email" in field_names, "email column should be added"
             assert "created_at" in field_names, "created_at column should be added"
-            print(f"✓ VERIFY 1: Table schema has new columns: {field_names}")
+            print(f"VERIFY 1: Table schema has new columns: {field_names}")
 
             # 2. Old records have NULL for new columns
             old_records = updated_table.filter("id <= 2").collect()
             assert len(old_records) == 2, "Should have 2 old records"
             assert all(row["email"] is None for row in old_records), "Old records should have NULL for email"
             assert all(row["created_at"] is None for row in old_records), "Old records should have NULL for created_at"
-            print(f"✓ VERIFY 2: Old records have NULL for new columns")
+            print(f"VERIFY 2: Old records have NULL for new columns")
 
             # 3. Can insert new records with all columns
             # NOTE: Must specify column names explicitly because column order may differ
@@ -109,16 +109,16 @@ class TestSchemaEvolutionApply:
             assert new_record["name"] == "David"
             assert new_record["email"] == "david@example.com"
             assert new_record["created_at"] == "2024-01-16T14:00:00"
-            print(f"✓ VERIFY 3: Can insert new records with all columns")
+            print(f"VERIFY 3: Can insert new records with all columns")
 
             # 4. No data loss (should have 3 records total: 2 initial + 1 new)
             total_count = updated_table.count()
             assert total_count == 3, f"Should have 3 records total, got {total_count}"
-            print(f"✓ VERIFY 4: No data loss ({total_count} records)")
+            print(f"VERIFY 4: No data loss ({total_count} records)")
 
-            print(f"\n✅ Test 1 PASSED: append_new_columns happy path works on {table_id}")
+            print(f"Test 1 PASSED: append_new_columns happy path works on {table_id}")
 
         finally:
             # Cleanup
             spark_session.sql(f"DROP TABLE IF EXISTS {table_id}")
-            print(f"✓ Cleaned up table: {table_id}")
+            print(f"Cleaned up table: {table_id}")

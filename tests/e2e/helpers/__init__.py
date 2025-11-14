@@ -3,7 +3,7 @@ E2E Test Helpers Package.
 
 This package contains all helper modules for e2e tests, organized by responsibility:
 - constants: Magic numbers, timeouts, status values
-- logger: E2ELogger class
+- logger: TestLogger class (E2ELogger is deprecated alias)
 - factories: Ingestion creation, data generation
 - run_helpers: Run execution and monitoring
 - assertions: Verification functions
@@ -29,7 +29,7 @@ from .constants import (
     AUTOLOADER_TAG,
 )
 
-from .logger import E2ELogger
+from .logger import E2ELogger, TestLogger
 
 from .factories import (
     create_standard_ingestion,
@@ -79,6 +79,7 @@ __all__ = [
     "AUTOLOADER_TAG",
     # Logger
     "E2ELogger",
+    "TestLogger",
     # Factories
     "create_standard_ingestion",
     "generate_unique_table_name",

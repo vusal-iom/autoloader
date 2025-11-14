@@ -87,7 +87,7 @@ def lakehouse_bucket(minio_client) -> Generator[str, None, None]:
     # Create bucket
     try:
         minio_client.create_bucket(Bucket=bucket_name)
-        print(f"✅ Created lakehouse bucket: {bucket_name}")
+        print(f"Created lakehouse bucket: {bucket_name}")
     except Exception as e:
         # If bucket already exists, that's fine
         if "BucketAlreadyOwnedByYou" not in str(e) and "BucketAlreadyExists" not in str(e):
@@ -117,10 +117,10 @@ def lakehouse_bucket(minio_client) -> Generator[str, None, None]:
 
         # Delete bucket
         minio_client.delete_bucket(Bucket=bucket_name)
-        print(f"🧹 Cleaned up lakehouse bucket: {bucket_name} ({len(objects_to_delete)} objects deleted)")
+        print(f"Cleaned up lakehouse bucket: {bucket_name} ({len(objects_to_delete)} objects deleted)")
 
     except Exception as e:
-        print(f"⚠️  Warning: Failed to cleanup lakehouse bucket {bucket_name}: {e}")
+        print(f"Warning: Failed to cleanup lakehouse bucket {bucket_name}: {e}")
 
 
 @pytest.fixture(scope="function")
@@ -138,7 +138,7 @@ def test_bucket(minio_client) -> Generator[str, None, None]:
     # Create bucket
     try:
         minio_client.create_bucket(Bucket=bucket_name)
-        print(f"\n✅ Created test bucket: {bucket_name}")
+        print(f"Created test bucket: {bucket_name}")
     except Exception as e:
         raise RuntimeError(f"Failed to create bucket {bucket_name}: {e}")
 
@@ -158,10 +158,10 @@ def test_bucket(minio_client) -> Generator[str, None, None]:
 
         # Delete bucket
         minio_client.delete_bucket(Bucket=bucket_name)
-        print(f"🧹 Cleaned up test bucket: {bucket_name}")
+        print(f"Cleaned up test bucket: {bucket_name}")
 
     except Exception as e:
-        print(f"⚠️  Warning: Failed to cleanup bucket {bucket_name}: {e}")
+        print(f"Warning: Failed to cleanup bucket {bucket_name}: {e}")
 
 
 @pytest.fixture(scope="function")
@@ -215,9 +215,9 @@ def sample_json_files(minio_client, test_bucket) -> List[Dict[str, any]]:
             "records": len(records)
         })
 
-        print(f"  ✅ Uploaded: {key} ({len(records)} records, {file_size} bytes)")
+        print(f"  Uploaded: {key} ({len(records)} records, {file_size} bytes)")
 
-    print(f"📁 Created {len(files_created)} test files with {num_files * records_per_file} total records\n")
+    print(f"Created {len(files_created)} test files with {num_files * records_per_file} total records\n")
 
     return files_created
 
@@ -244,13 +244,13 @@ def spark_session(spark_connect_url: str, ensure_services_ready) -> Generator[Sp
             .appName("E2E-Test-Verification") \
             .getOrCreate()
 
-        print(f"✅ Connected to Spark: {spark_connect_url}\n")
+        print(f"Connected to Spark: {spark_connect_url}\n")
 
         yield spark
 
         # Cleanup
         spark.stop()
-        print("🧹 Stopped Spark session")
+        print("Stopped Spark session")
 
     except Exception as e:
         raise RuntimeError(

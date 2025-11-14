@@ -24,7 +24,7 @@ from prefect import get_client
 from pyspark.sql import SparkSession
 
 from tests.e2e.helpers import (
-    E2ELogger,
+    TestLogger,
     create_standard_ingestion,
     wait_for_run_completion,
     assert_run_metrics,
@@ -74,7 +74,7 @@ class TestPrefectWorkflows:
         8. Delete ingestion via API
         9. Verify deployment deleted in Prefect
         """
-        logger = E2ELogger()
+        logger = TestLogger()
         logger.section("E2E TEST: Complete Prefect Lifecycle")
 
         table_name = generate_unique_table_name("prefect_lifecycle")
@@ -301,7 +301,7 @@ class TestPrefectWorkflows:
         5. Resume via API
         6. Verify deployment active again
         """
-        logger = E2ELogger()
+        logger = TestLogger()
         logger.section("E2E TEST: Pause/Resume Workflow")
 
         table_name = generate_unique_table_name("prefect_pause_resume")

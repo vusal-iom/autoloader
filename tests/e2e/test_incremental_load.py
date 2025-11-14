@@ -32,7 +32,7 @@ from fastapi.testclient import TestClient
 from pyspark.sql import SparkSession
 
 from tests.e2e.helpers import (
-    E2ELogger,
+    TestLogger,
     create_standard_ingestion,
     wait_for_run_completion,
     assert_run_metrics,
@@ -81,7 +81,7 @@ class TestIncrementalLoadPrefect:
         - All 5 files marked as processed
         - Deployment deleted on cleanup
         """
-        logger = E2ELogger()
+        logger = TestLogger()
         logger.section("E2E TEST: Incremental Load with Prefect")
 
         table_name = generate_unique_table_name("prefect_incremental")

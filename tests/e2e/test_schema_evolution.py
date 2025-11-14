@@ -33,7 +33,7 @@ from fastapi.testclient import TestClient
 from pyspark.sql import SparkSession
 
 from .helpers import (
-    E2ELogger,
+    TestLogger,
     create_standard_ingestion,
     trigger_run,
     wait_for_run_completion,
@@ -84,7 +84,7 @@ class TestSchemaEvolutionPrefect:
         - No data loss
         - Deployment deleted on cleanup
         """
-        logger = E2ELogger()
+        logger = TestLogger()
         logger.section("E2E TEST: Schema Evolution with Prefect")
 
         table_name = generate_unique_table_name("prefect_schema_evolution")
