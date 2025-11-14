@@ -1,5 +1,8 @@
 Implement tests one at a time from a test strategy document.
 
+
+Always apply "ultrathink"
+
 IMPORTANT RULES:
 1. First ask: "Which test strategy document should I use?"
 2. Read the strategy and list all test cases
