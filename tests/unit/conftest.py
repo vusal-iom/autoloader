@@ -30,9 +30,7 @@ __all__ = [
 @pytest.fixture(scope="function")
 def api_client(test_local_db: Session) -> Generator[TestClient, None, None]:
     """
-    Create FastAPI test client with database dependency override.
-
-    Uses TestClient for synchronous testing of async endpoints.
+    Create FastAPI test client with database dependency override (using localdb)
     """
     # Override database dependency
     def override_get_db():

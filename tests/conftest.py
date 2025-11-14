@@ -9,3 +9,18 @@ Specific fixtures are organized in subdirectories:
 
 Modular fixture definitions are kept in tests/fixtures/ for organization.
 """
+import os
+
+import pytest
+
+
+@pytest.fixture(scope="function")
+def test_tenant_id() -> str:
+    """Get test tenant ID from environment."""
+    return os.getenv("TEST_TENANT_ID", "test-tenant-001")
+
+
+@pytest.fixture(scope="function")
+def test_cluster_id() -> str:
+    """Get test cluster ID from environment."""
+    return os.getenv("TEST_CLUSTER_ID", "test-cluster-001")
