@@ -9,7 +9,8 @@ from typing import Dict, Any, List, Optional
 from datetime import datetime, timezone
 from fastapi.testclient import TestClient
 
-from .logger import E2ELogger
+from tests.helpers.logger import TestLogger
+
 from .constants import (
     SCHEMA_TYPE_BASE,
     SCHEMA_TYPE_EVOLVED,
@@ -166,7 +167,7 @@ def upload_json_files(
     num_files: int,
     records_per_file: int = DEFAULT_RECORDS_PER_FILE,
     schema_type: str = SCHEMA_TYPE_BASE,
-    logger: Optional[E2ELogger] = None
+    logger: Optional[TestLogger] = None
 ) -> List[Dict[str, Any]]:
     """
     Upload JSON files to MinIO with specified schema.
@@ -254,7 +255,7 @@ def _upload_records_to_minio(
     file_idx: int,
     records: List[Dict[str, Any]],
     schema_type: str,
-    logger: Optional[E2ELogger]
+    logger: Optional[TestLogger]
 ) -> Dict[str, Any]:
     """Upload records to MinIO and return file metadata."""
     # Convert to newline-delimited JSON

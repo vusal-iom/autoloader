@@ -8,8 +8,8 @@ import time
 import pytest
 from typing import Dict, Any, Optional
 from fastapi.testclient import TestClient
+from tests.helpers.logger import TestLogger
 
-from .logger import E2ELogger
 from .constants import (
     DEFAULT_RUN_TIMEOUT,
     DEFAULT_POLL_INTERVAL,
@@ -55,7 +55,7 @@ def wait_for_run_completion(
     run_id: str,
     timeout: int = DEFAULT_RUN_TIMEOUT,
     poll_interval: int = DEFAULT_POLL_INTERVAL,
-    logger: Optional[E2ELogger] = None
+    logger: Optional[TestLogger] = None
 ) -> Dict[str, Any]:
     """
     Poll for run completion.

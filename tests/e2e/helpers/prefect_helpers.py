@@ -9,8 +9,8 @@ import pytest
 from typing import Any, List, Optional
 from prefect import get_client
 from prefect.exceptions import ObjectNotFound
+from tests.helpers.logger import TestLogger
 
-from .logger import E2ELogger
 from .constants import (
     PREFECT_FLOW_TIMEOUT,
     PREFECT_POLL_INTERVAL,
@@ -27,7 +27,7 @@ async def wait_for_prefect_flow_completion(
     flow_run_id: str,
     timeout: int = PREFECT_FLOW_TIMEOUT,
     poll_interval: int = PREFECT_POLL_INTERVAL,
-    logger: Optional[E2ELogger] = None
+    logger: Optional[TestLogger] = None
 ) -> str:
     """
     Wait for Prefect flow run to complete.
@@ -81,7 +81,7 @@ async def verify_prefect_deployment_exists(
     deployment_id: str,
     expected_name: Optional[str] = None,
     expected_tags: Optional[List[str]] = None,
-    logger: Optional[E2ELogger] = None
+    logger: Optional[TestLogger] = None
 ) -> Any:
     """
     Verify that a Prefect deployment exists and optionally check its properties.
@@ -128,7 +128,7 @@ async def verify_prefect_deployment_exists(
 
 async def verify_prefect_deployment_active(
     deployment_id: str,
-    logger: Optional[E2ELogger] = None
+    logger: Optional[TestLogger] = None
 ):
     """
     Verify that a Prefect deployment is active (not paused, has active schedules).
@@ -160,7 +160,7 @@ async def verify_prefect_deployment_active(
 
 async def verify_prefect_deployment_paused(
     deployment_id: str,
-    logger: Optional[E2ELogger] = None
+    logger: Optional[TestLogger] = None
 ):
     """
     Verify that a Prefect deployment is paused.
@@ -187,7 +187,7 @@ async def verify_prefect_deployment_paused(
 
 async def verify_prefect_deployment_deleted(
     deployment_id: str,
-    logger: Optional[E2ELogger] = None
+    logger: Optional[TestLogger] = None
 ):
     """
     Verify that a Prefect deployment has been deleted.

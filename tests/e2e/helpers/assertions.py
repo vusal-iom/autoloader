@@ -7,7 +7,8 @@ Provides verification functions for test assertions.
 from typing import Dict, Any, List, Optional
 from pyspark.sql import SparkSession
 
-from .logger import E2ELogger
+from tests.helpers.logger import TestLogger
+
 from .constants import SUCCESS_STATUSES
 
 
@@ -20,7 +21,7 @@ def assert_run_metrics(
     expected_files: Optional[int] = None,
     expected_records: Optional[int] = None,
     expected_errors: int = 0,
-    logger: Optional[E2ELogger] = None
+    logger: Optional[TestLogger] = None
 ):
     """
     Assert run metrics match expectations.
@@ -71,7 +72,7 @@ def verify_table_data(
     expected_fields: Optional[List[str]] = None,
     unexpected_fields: Optional[List[str]] = None,
     check_duplicates: bool = True,
-    logger: Optional[E2ELogger] = None
+    logger: Optional[TestLogger] = None
 ):
     """
     Verify Iceberg table data.
@@ -134,7 +135,7 @@ def verify_schema_evolution(
     old_count: int,
     new_count: int,
     new_fields: List[str],
-    logger: Optional[E2ELogger] = None
+    logger: Optional[TestLogger] = None
 ):
     """
     Verify schema evolution backward and forward compatibility.

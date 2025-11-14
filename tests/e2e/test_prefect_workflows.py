@@ -22,9 +22,9 @@ import pytest
 from fastapi.testclient import TestClient
 from prefect import get_client
 from pyspark.sql import SparkSession
+from tests.helpers.logger import TestLogger
 
 from tests.e2e.helpers import (
-    TestLogger,
     create_standard_ingestion,
     wait_for_run_completion,
     assert_run_metrics,

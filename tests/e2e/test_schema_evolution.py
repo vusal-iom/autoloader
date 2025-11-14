@@ -31,9 +31,9 @@ import pytest
 from typing import Dict
 from fastapi.testclient import TestClient
 from pyspark.sql import SparkSession
+from tests.helpers.logger import TestLogger
 
 from .helpers import (
-    TestLogger,
     create_standard_ingestion,
     trigger_run,
     wait_for_run_completion,
