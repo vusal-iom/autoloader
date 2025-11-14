@@ -8,13 +8,14 @@ import uuid
 from app.repositories.schema_version_repository import SchemaVersionRepository
 from app.models.domain import SchemaVersion
 
+from tests.fixtures.local_db import test_local_db, test_local_db_engine, test_local_database_url
 
 class TestSchemaVersionRepository:
     """Test SchemaVersionRepository CRUD operations."""
 
-    def test_create_version(self, test_db):
+    def test_create_version(self, test_local_db):
         """Test creating a schema version record."""
-        repo = SchemaVersionRepository(test_db)
+        repo = SchemaVersionRepository(test_local_db)
 
         schema_json = {
             "type": "struct",

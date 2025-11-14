@@ -1,28 +1,15 @@
-"""
-Integration test fixtures.
-
-Provides Spark Connect session and SQLite database for integration tests.
-
-IMPORTANT: Integration tests require Spark Connect to be running.
-Start services with: docker-compose -f docker-compose.test.yml up -d
-"""
-
-import pytest
-import tempfile
-import time
-import httpx
 from pathlib import Path
 from typing import Generator
-from pyspark.sql import SparkSession
+
+import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
-from app.spark.connect_client import SparkConnectClient
 
 from app.database import Base
 
 
 @pytest.fixture(scope="session")
-def test_database_url() -> str:
+def test_local_database_url() -> str:
     """
     Use SQLite for integration tests (no docker-compose required).
 
@@ -32,10 +19,10 @@ def test_database_url() -> str:
 
 
 @pytest.fixture(scope="session")
-def test_engine(test_database_url: str):
+def test_local_db_engine(test_local_database_url: str):
     """Create test database engine with SQLite."""
     engine = create_engine(
-        test_database_url,
+        test_local_database_url,
         connect_args={"check_same_thread": False}  # Needed for SQLite
     )
 
@@ -55,7 +42,7 @@ def test_engine(test_database_url: str):
 
 
 @pytest.fixture(scope="function")
-def test_db(test_engine) -> Generator[Session, None, None]:
+def test_local_db(test_local_db_engine) -> Generator[Session, None, None]:
     """
     Create a fresh database session for each test.
 
@@ -64,7 +51,7 @@ def test_db(test_engine) -> Generator[Session, None, None]:
     TestingSessionLocal = sessionmaker(
         autocommit=False,
         autoflush=False,
-        bind=test_engine
+        bind=test_local_db_engine
     )
 
     session = TestingSessionLocal()
