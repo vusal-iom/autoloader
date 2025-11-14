@@ -206,6 +206,241 @@ def _verify_forward_compatibility(df, new_record_filter, new_count, new_fields, 
 
 
 # =============================================================================
+# Content Verification
+# =============================================================================
+
+def verify_table_content(
+    df_or_table: Any,
+    expected_data: List[Dict[str, Any]],
+    spark_session: Optional[SparkSession] = None,
+    columns: Optional[List[str]] = None,
+    ignore_column_order: bool = True,
+    ignore_row_order: bool = True,
+    logger: Optional[TestLogger] = None
+):
+    """
+    Verify DataFrame or table contains exactly the expected data.
+
+    Compares actual data against expected rows with comprehensive diff output
+    on mismatch. Verifies all values including nulls.
+
+    Args:
+        df_or_table: Either a DataFrame or table identifier string
+        expected_data: List of dicts representing expected rows
+        spark_session: Spark session (required if df_or_table is a string)
+        columns: Subset of columns to compare (None = all columns)
+        ignore_column_order: Whether to ignore column order (default: True)
+        ignore_row_order: Whether to sort rows before comparison (default: True)
+        logger: Optional logger for detailed output
+
+    Returns:
+        DataFrame for chaining
+
+    Raises:
+        AssertionError: If data does not match, with detailed diff output
+
+    Example:
+        verify_table_content(
+            df,
+            expected_data=[
+                {"id": 1, "name": "Alice", "email": None},
+                {"id": 2, "name": "Bob", "email": "bob@example.com"}
+            ],
+            logger=logger
+        )
+    """
+    from pyspark.sql.types import StructType
+
+    # Get DataFrame from input
+    if isinstance(df_or_table, str):
+        if spark_session is None:
+            raise ValueError("spark_session is required when df_or_table is a table identifier")
+        df = spark_session.table(df_or_table)
+        table_name = df_or_table
+    elif hasattr(df_or_table, 'schema') and hasattr(df_or_table, 'collect'):
+        # Check for DataFrame duck-typing (works for both regular and Spark Connect DataFrames)
+        df = df_or_table
+        table_name = "DataFrame"
+        # Get spark session from DataFrame if not provided
+        if spark_session is None:
+            spark_session = df.sparkSession
+    else:
+        raise ValueError(f"df_or_table must be DataFrame or string, got {type(df_or_table)}")
+
+    if logger:
+        logger.step(f"Verifying content of {table_name}")
+
+    # Get columns to compare
+    if columns is None:
+        columns = df.columns
+    else:
+        # Validate requested columns exist
+        missing_cols = set(columns) - set(df.columns)
+        if missing_cols:
+            raise ValueError(f"Columns not found in DataFrame: {missing_cols}")
+
+    # Select and potentially reorder columns
+    if ignore_column_order:
+        columns = sorted(columns)
+
+    df_to_compare = df.select(*columns)
+
+    # Convert expected data to DataFrame
+    if not expected_data:
+        # For empty expected data, create empty DataFrame with same schema as actual
+        expected_df = spark_session.createDataFrame([], df_to_compare.schema)
+    else:
+        # Create DataFrame with schema from actual data to handle NULL values correctly
+        # This ensures type compatibility when expected data has all-NULL columns
+        expected_df = spark_session.createDataFrame(expected_data, schema=df_to_compare.schema)
+        if ignore_column_order:
+            expected_df = expected_df.select(*sorted(expected_df.columns))
+
+    # Sort rows if needed (skip if no rows or no columns)
+    if ignore_row_order and columns:
+        # Sort by all columns for deterministic ordering
+        df_to_compare = df_to_compare.sort(*columns)
+        expected_df = expected_df.sort(*columns)
+
+    # Collect data
+    actual_rows = df_to_compare.collect()
+    expected_rows = expected_df.collect()
+
+    actual_count = len(actual_rows)
+    expected_count = len(expected_rows)
+
+    if logger:
+        logger.metric("Expected Rows", expected_count)
+        logger.metric("Actual Rows", actual_count)
+
+    # Compare
+    if actual_count != expected_count or actual_rows != expected_rows:
+        _generate_detailed_diff(
+            actual_rows=actual_rows,
+            expected_rows=expected_rows,
+            columns=columns,
+            table_name=table_name
+        )
+
+    if logger:
+        logger.success(f"Content verification passed: {actual_count} rows match exactly")
+
+    return df
+
+
+def _generate_detailed_diff(actual_rows, expected_rows, columns, table_name):
+    """
+    Generate detailed diff output showing mismatches.
+
+    Shows:
+    - Row count mismatch
+    - Missing rows (in expected but not actual)
+    - Extra rows (in actual but not expected)
+    - Value mismatches (rows present in both but with different values)
+    """
+    actual_count = len(actual_rows)
+    expected_count = len(expected_rows)
+
+    # Convert rows to comparable format (dict with None for NULL)
+    def row_to_dict(row, cols):
+        return {col: row[col] for col in cols}
+
+    actual_dicts = [row_to_dict(row, columns) for row in actual_rows]
+    expected_dicts = [row_to_dict(row, columns) for row in expected_rows]
+
+    # Build error message
+    error_lines = [
+        f"\nContent verification failed for {table_name}",
+        f"Expected {expected_count} rows, got {actual_count} rows",
+        ""
+    ]
+
+    # Find missing rows (in expected but not actual)
+    missing_rows = []
+    for exp_dict in expected_dicts:
+        if exp_dict not in actual_dicts:
+            missing_rows.append(exp_dict)
+
+    # Find extra rows (in actual but not expected)
+    extra_rows = []
+    for act_dict in actual_dicts:
+        if act_dict not in expected_dicts:
+            extra_rows.append(act_dict)
+
+    # Show missing rows
+    if missing_rows:
+        error_lines.append(f"MISSING ROWS ({len(missing_rows)} rows in expected but not in actual):")
+        for i, row in enumerate(missing_rows[:5], 1):  # Show first 5
+            error_lines.append(f"  {i}. {_format_row_dict(row)}")
+        if len(missing_rows) > 5:
+            error_lines.append(f"  ... and {len(missing_rows) - 5} more")
+        error_lines.append("")
+
+    # Show extra rows
+    if extra_rows:
+        error_lines.append(f"EXTRA ROWS ({len(extra_rows)} rows in actual but not in expected):")
+        for i, row in enumerate(extra_rows[:5], 1):  # Show first 5
+            error_lines.append(f"  {i}. {_format_row_dict(row)}")
+        if len(extra_rows) > 5:
+            error_lines.append(f"  ... and {len(extra_rows) - 5} more")
+        error_lines.append("")
+
+    # Show side-by-side comparison for first few rows
+    if actual_count > 0 and expected_count > 0:
+        error_lines.append("FIRST 3 ROWS COMPARISON:")
+        max_rows = min(3, actual_count, expected_count)
+        for i in range(max_rows):
+            exp_dict = expected_dicts[i] if i < len(expected_dicts) else {}
+            act_dict = actual_dicts[i] if i < len(actual_dicts) else {}
+
+            error_lines.append(f"  Row {i + 1}:")
+            error_lines.append(f"    Expected: {_format_row_dict(exp_dict)}")
+            error_lines.append(f"    Actual:   {_format_row_dict(act_dict)}")
+
+            # Highlight differences
+            if exp_dict != act_dict:
+                diffs = []
+                all_keys = set(exp_dict.keys()) | set(act_dict.keys())
+                for key in sorted(all_keys):
+                    exp_val = exp_dict.get(key, "<missing>")
+                    act_val = act_dict.get(key, "<missing>")
+                    if exp_val != act_val:
+                        diffs.append(f"{key}: {exp_val} != {act_val}")
+                if diffs:
+                    error_lines.append(f"    Diff:     {', '.join(diffs)}")
+            error_lines.append("")
+
+    # Show all expected data if small
+    if expected_count <= 10:
+        error_lines.append("EXPECTED DATA (all rows):")
+        for i, row in enumerate(expected_dicts, 1):
+            error_lines.append(f"  {i}. {_format_row_dict(row)}")
+        error_lines.append("")
+
+    # Show all actual data if small
+    if actual_count <= 10:
+        error_lines.append("ACTUAL DATA (all rows):")
+        for i, row in enumerate(actual_dicts, 1):
+            error_lines.append(f"  {i}. {_format_row_dict(row)}")
+        error_lines.append("")
+
+    raise AssertionError("\n".join(error_lines))
+
+
+def _format_row_dict(row_dict: Dict[str, Any]) -> str:
+    """Format a row dict for display, showing None as None."""
+    items = []
+    for key, value in sorted(row_dict.items()):
+        if value is None:
+            items.append(f"{key}=None")
+        elif isinstance(value, str):
+            items.append(f'{key}="{value}"')
+        else:
+            items.append(f"{key}={value}")
+    return "{" + ", ".join(items) + "}"
+
+
+# =============================================================================
 # Test Summary Formatting
 # =============================================================================
 

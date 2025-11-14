@@ -5,8 +5,11 @@ Tests validate that DDL operations actually work with real Spark and Iceberg.
 """
 import pytest
 import uuid
+from typing import Any, Dict, List
 
 from app.services.schema_evolution_service import SchemaEvolutionService
+from tests.e2e.helpers.assertions import verify_table_content
+from tests.helpers.logger import TestLogger
 
 
 @pytest.mark.integration
@@ -23,34 +26,32 @@ class TestSchemaEvolutionApply:
         - Evolve schema with new columns
         - Verify DDL works and data integrity is maintained
         """
-        # Generate unique table name
+        logger = TestLogger()
+        logger.section("Integration Test: Append New Columns Happy Path")
+
         table_name = f"users_{uuid.uuid4().hex[:8]}"
         table_id = f"test_catalog.test_db.{table_name}"
 
         try:
-            # ============================================================
-            # SETUP: Create table with base schema
-            # ============================================================
+            logger.phase("Setup: Create table with base schema")
             spark_session.sql(f"""
                 CREATE TABLE {table_id} (
                     id BIGINT,
                     name STRING
                 ) USING iceberg
             """)
-            print(f"Created table: {table_id}")
+            logger.step(f"Created table: {table_id}", always=True)
 
-            # Insert initial data
             spark_session.sql(f"""
                 INSERT INTO {table_id}
                 VALUES (1, 'Alice'), (2, 'Bob')
             """)
-            print(f"Inserted 2 initial records")
+            logger.step("Inserted 2 initial records", always=True)
 
-            # ============================================================
-            # ACTION: Create evolved schema and apply evolution
-            # ============================================================
-            # Create DataFrame with evolved schema (new columns: email, created_at)
-            json_data = [
+            logger.phase("Action: Create evolved schema and apply evolution")
+
+            # Type-annotated data to fix diagnostic warning
+            json_data: List[Dict[str, Any]] = [
                 {
                     "id": 3,
                     "name": "Charlie",
@@ -59,62 +60,60 @@ class TestSchemaEvolutionApply:
                 }
             ]
             df = spark_session.createDataFrame(json_data)
-            print(f"Created DataFrame with evolved schema")
+            logger.step("Created DataFrame with evolved schema", always=True)
 
-            # Get target table schema
             target_schema = spark_session.table(table_id).schema
 
-            # Compare schemas
             comparison = SchemaEvolutionService.compare_schemas(df.schema, target_schema)
             assert comparison.has_changes, "Should detect schema changes"
             assert len(comparison.added_columns) == 2, "Should detect 2 new columns (email, created_at)"
-            print(f"Schema comparison detected {len(comparison.added_columns)} new columns")
+            logger.step(f"Schema comparison detected {len(comparison.added_columns)} new columns", always=True)
 
-            # Apply evolution with append_new_columns strategy
             SchemaEvolutionService.apply_schema_evolution(
                 spark=spark_session,
                 table_identifier=table_id,
                 comparison=comparison,
                 strategy="append_new_columns"
             )
-            print(f"Applied schema evolution (append_new_columns)")
+            logger.step("Applied schema evolution (append_new_columns)", always=True)
 
-            # ============================================================
-            # VERIFY: Schema updated correctly
-            # ============================================================
-            # 1. Table schema has new columns
+            logger.phase("Verify: Schema updated correctly")
+
+            # 1. Verify table schema has new columns
             updated_table = spark_session.table(table_id)
-            field_names = [f.name for f in updated_table.schema.fields]
+            field_names = {f.name for f in updated_table.schema.fields}
 
-            assert "id" in field_names, "id column should exist"
-            assert "name" in field_names, "name column should exist"
-            assert "email" in field_names, "email column should be added"
-            assert "created_at" in field_names, "created_at column should be added"
-            print(f"VERIFY 1: Table schema has new columns: {field_names}")
+            assert field_names == {"id", "name", "email", "created_at"}
+            logger.step(f"Table schema has new columns: {field_names}", always=True)
 
-            # 2. Old records have NULL for new columns
-            old_records = updated_table.filter("id <= 2").collect()
-            assert len(old_records) == 2, "Should have 2 old records"
-            assert all(row["email"] is None for row in old_records), "Old records should have NULL for email"
-            assert all(row["created_at"] is None for row in old_records), "Old records should have NULL for created_at"
-            print(f"VERIFY 2: Old records have NULL for new columns")
+            # 2. Verify old records have NULL for new columns
+            verify_table_content(
+                df_or_table=updated_table,
+                expected_data=[
+                    {"id": 1, "name": "Alice", "email": None, "created_at": None},
+                    {"id": 2, "name": "Bob", "email": None, "created_at": None},
+                ],
+                spark_session=spark_session,
+                logger=logger
+            )
+            logger.step("Old records have NULL for new columns", always=True)
 
-            # 3. Can insert the DataFrame with evolved schema
+            # 3. Insert DataFrame with evolved schema and verify
             df.writeTo(table_id).append()
-            new_record = updated_table.filter("id = 3").collect()[0]
-            assert new_record["name"] == "Charlie"
-            assert new_record["email"] == "charlie@example.com"
-            assert new_record["created_at"] == "2024-01-15T10:30:00"
-            print(f"VERIFY 3: Can insert new records with all columns")
 
-            # 4. No data loss (should have 3 records total: 2 initial + 1 new)
-            total_count = updated_table.count()
-            assert total_count == 3, f"Should have 3 records total, got {total_count}"
-            print(f"VERIFY 4: No data loss ({total_count} records)")
-
-            print(f"Test 1 PASSED: append_new_columns happy path works on {table_id}")
+            # 4. Verify no data loss - all records present with correct values
+            verify_table_content(
+                df_or_table=table_id,
+                expected_data=[
+                    {"id": 1, "name": "Alice", "email": None, "created_at": None},
+                    {"id": 2, "name": "Bob", "email": None, "created_at": None},
+                    {"id": 3, "name": "Charlie", "email": "charlie@example.com", "created_at": "2024-01-15T10:30:00"},
+                ],
+                spark_session=spark_session,
+                logger=logger
+            )
+            logger.success(f"All verifications passed for {table_id}", always=True)
 
         finally:
-            # Cleanup
             spark_session.sql(f"DROP TABLE IF EXISTS {table_id}")
-            print(f"Cleaned up table: {table_id}")
+            logger.step(f"Cleaned up table: {table_id}", always=True)
