@@ -3,16 +3,16 @@ Unit tests for schema version API endpoints.
 
 Tests the REST API for viewing schema version history.
 """
-import pytest
 import uuid
-from datetime import datetime
 
-from app.repositories.schema_version_repository import SchemaVersionRepository
+import pytest
+
 from app.models.domain import Ingestion, IngestionStatus
+from app.repositories.schema_version_repository import SchemaVersionRepository
 
 
 @pytest.fixture
-def ingestion(test_db):
+def ingestion(test_local_db):
     """Create test ingestion with unique ID."""
     ingestion_id = f"test-ingestion-{uuid.uuid4()}"
     ingestion = Ingestion(
@@ -31,16 +31,16 @@ def ingestion(test_db):
         created_by="test-user",
         checkpoint_location=f"/tmp/test-checkpoints/{ingestion_id}"
     )
-    test_db.add(ingestion)
-    test_db.commit()
-    test_db.refresh(ingestion)
+    test_local_db.add(ingestion)
+    test_local_db.commit()
+    test_local_db.refresh(ingestion)
     return ingestion
 
 
 @pytest.fixture
-def schema_versions(test_db, ingestion):
+def schema_versions(test_local_db, ingestion):
     """Create test schema versions."""
-    repo = SchemaVersionRepository(test_db)
+    repo = SchemaVersionRepository(test_local_db)
 
     versions = []
     for i in range(1, 4):
@@ -73,7 +73,7 @@ def schema_versions(test_db, ingestion):
 class TestSchemaVersionsAPI:
     """Test schema versions API endpoints."""
 
-    def test_get_all_schema_versions(self, api_client, test_db, ingestion, schema_versions):
+    def test_get_all_schema_versions(self, api_client, ingestion, schema_versions):
         """Test GET /api/v1/ingestions/{id}/schema-versions."""
         response = api_client.get(f"/api/v1/ingestions/{ingestion.id}/schema-versions")
 
@@ -107,7 +107,7 @@ class TestSchemaVersionsAPI:
         assert "affected_files" in version
         assert len(version["affected_files"]) == 1
 
-    def test_get_all_schema_versions_empty(self, api_client, test_db):
+    def test_get_all_schema_versions_empty(self, api_client, test_local_db):
         """Test getting versions for ingestion with no versions."""
         # Create ingestion without versions
         ingestion_id = f"empty-ingestion-{uuid.uuid4()}"
@@ -127,8 +127,8 @@ class TestSchemaVersionsAPI:
             created_by="test-user",
             checkpoint_location=f"/tmp/test-checkpoints/{ingestion_id}"
         )
-        test_db.add(ingestion)
-        test_db.commit()
+        test_local_db.add(ingestion)
+        test_local_db.commit()
 
         response = api_client.get(f"/api/v1/ingestions/{ingestion.id}/schema-versions")
 
@@ -146,7 +146,7 @@ class TestSchemaVersionsAPI:
         assert response.status_code == 404
         assert "not found" in response.json()["detail"].lower()
 
-    def test_get_schema_version_by_number(self, api_client, test_db, ingestion, schema_versions):
+    def test_get_schema_version_by_number(self, api_client, ingestion, schema_versions):
         """Test GET /api/v1/ingestions/{id}/schema-versions/{version}."""
         response = api_client.get(f"/api/v1/ingestions/{ingestion.id}/schema-versions/2")
 
@@ -175,7 +175,7 @@ class TestSchemaVersionsAPI:
 
         assert response.status_code == 404
 
-    def test_get_latest_schema_version(self, api_client, test_db, ingestion, schema_versions):
+    def test_get_latest_schema_version(self, api_client, ingestion, schema_versions):
         """Test GET /api/v1/ingestions/{id}/schema-versions/latest."""
         response = api_client.get(f"/api/v1/ingestions/{ingestion.id}/schema-versions/latest")
 
@@ -187,7 +187,7 @@ class TestSchemaVersionsAPI:
         assert data["schema_json"]["fields"][2]["name"] == "field_3"
         assert data["affected_files"] == ["s3://bucket/file3.json"]
 
-    def test_get_latest_schema_version_no_versions(self, api_client, test_db):
+    def test_get_latest_schema_version_no_versions(self, api_client, test_local_db):
         """Test 404 when no versions exist."""
         # Create ingestion without versions
         ingestion_id = f"no-versions-ingestion-{uuid.uuid4()}"
@@ -207,8 +207,8 @@ class TestSchemaVersionsAPI:
             created_by="test-user",
             checkpoint_location=f"/tmp/test-checkpoints/{ingestion_id}"
         )
-        test_db.add(ingestion)
-        test_db.commit()
+        test_local_db.add(ingestion)
+        test_local_db.commit()
 
         response = api_client.get(f"/api/v1/ingestions/{ingestion.id}/schema-versions/latest")
 
@@ -261,9 +261,9 @@ class TestSchemaVersionsAPI:
         assert data["total"] == len(data["versions"])
         assert data["current_version"] == ingestion.schema_version
 
-    def test_multiple_ingestions_isolated(self, api_client, test_db):
+    def test_multiple_ingestions_isolated(self, api_client, test_local_db):
         """Test that versions are properly isolated between ingestions."""
-        repo_schema = SchemaVersionRepository(test_db)
+        repo_schema = SchemaVersionRepository(test_local_db)
 
         # Create two ingestions with unique IDs
         ingestion_id_1 = f"ingestion-{uuid.uuid4()}"
@@ -301,9 +301,9 @@ class TestSchemaVersionsAPI:
             created_by="test-user",
             checkpoint_location=f"/tmp/test-checkpoints/{ingestion_id_2}"
         )
-        test_db.add(ingestion1)
-        test_db.add(ingestion2)
-        test_db.commit()
+        test_local_db.add(ingestion1)
+        test_local_db.add(ingestion2)
+        test_local_db.commit()
 
         # Create versions for ingestion1 only
         repo_schema.create_version(

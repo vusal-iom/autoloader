@@ -1,22 +1,52 @@
 """
-E2E Test Fixtures.
+E2E Test Fixtures Configuration.
 
-Provides fixtures specific to end-to-end integration tests:
-- MinIO client for S3-compatible storage
-- Test bucket creation and cleanup
-- Sample JSON file generation and upload
-- Spark Connect session for data verification
+Imports fixtures from tests/fixtures/ and defines E2E-specific fixtures.
+All fixtures here are automatically discovered by pytest for e2e tests.
 """
 
 import pytest
-import boto3
 import json
 import os
 from typing import Generator, Dict, List
 from datetime import datetime, timezone
 from pyspark.sql import SparkSession
 
+# Import fixtures from modular fixture files
+from tests.fixtures.ensure_services_ready import ensure_services_ready
+from tests.fixtures.integration_db import test_database_url, test_engine, test_db, api_client
+from tests.fixtures.integration_minio import (
+    minio_config,
+    minio_config_for_ingestion,
+    minio_client,
+    lakehouse_bucket,
+    test_bucket
+)
+from tests.fixtures.integration_spark import spark_connect_url, spark_client, spark_session
 
+# Explicitly list all fixtures for auto-discovery
+__all__ = [
+    # Service health
+    "ensure_services_ready",
+    # Database
+    "test_database_url",
+    "test_engine",
+    "test_db",
+    "api_client",
+    # MinIO
+    "minio_config",
+    "minio_config_for_ingestion",
+    "minio_client",
+    "lakehouse_bucket",
+    "test_bucket",
+    # Spark
+    "spark_connect_url",
+    "spark_client",
+    "spark_session",
+    # E2E specific (defined below)
+    "sample_json_files",
+    "e2e_api_client_no_override",
+]
 
 
 @pytest.fixture(scope="function")
