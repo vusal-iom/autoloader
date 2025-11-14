@@ -288,7 +288,5 @@ class TestSchemaVersionTracking:
         schema_json = version.schema_json
         assert "fields" in schema_json
 
-        field_names = [field["name"] for field in schema_json["fields"]]
-        assert "id" in field_names
-        assert "name" in field_names
-        assert "email" in field_names  # New column should be in schema
+        field_names = {field["name"] for field in schema_json["fields"]}
+        assert field_names == {"id", "name", "email"}
