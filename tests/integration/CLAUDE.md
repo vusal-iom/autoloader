@@ -48,24 +48,20 @@ Unlike e2e tests, integration tests:
 
 ### Schema Field Verification
 
-Always use set comparison for complete schema verification.
+Prefer the `verify_table_schema` helper for readable, deterministic schema checks. It prints the full schema (types + nested structures) which makes evolution diffs easy to review.
 
-**Do this:**
 ```python
-field_names = {f.name for f in updated_table.schema.fields}
-assert field_names == {"id", "name", "email", "created_at"}
+verify_table_schema(
+    df_or_table=updated_table,
+    expected_schema=[
+        ("id", "bigint"),
+        ("name", "string"),
+        ("email", "string"),
+        ("created_at", "string"),
+    ],
+    logger=logger,
+)
 ```
-
-**Not this:**
-```python
-field_names = [f.name for f in updated_table.schema.fields]
-assert "id" in field_names
-assert "name" in field_names
-assert "email" in field_names
-assert "created_at" in field_names
-```
-
-**Why:** Set comparison verifies exact field match (no extra fields, no missing fields), provides better error messages showing actual vs expected, and uses a single assertion instead of multiple.
 
 ### Table Content Verification
 

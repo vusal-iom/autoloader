@@ -8,7 +8,7 @@ import uuid
 from typing import Any, Dict, List
 
 from app.services.schema_evolution_service import SchemaEvolutionService
-from tests.e2e.helpers.assertions import verify_table_content
+from tests.e2e.helpers.assertions import verify_table_content, verify_table_schema
 from tests.helpers.logger import TestLogger
 
 
@@ -81,10 +81,16 @@ class TestSchemaEvolutionApply:
 
             # 1. Verify table schema has new columns
             updated_table = spark_session.table(table_id)
-            field_names = {f.name for f in updated_table.schema.fields}
-
-            assert field_names == {"id", "name", "email", "created_at"}
-            logger.step(f"Table schema has new columns: {field_names}", always=True)
+            verify_table_schema(
+                df_or_table=updated_table,
+                expected_schema=[
+                    ("id", "bigint"),
+                    ("name", "string"),
+                    ("email", "string"),
+                    ("created_at", "string"),
+                ],
+                logger=logger,
+            )
 
             # 2. Verify old records have NULL for new columns
             verify_table_content(
@@ -212,6 +218,15 @@ class TestSchemaEvolutionApply:
             logger.phase("Verify: Nested schema updated correctly")
 
             updated_table = spark_session.table(table_id)
+            verify_table_schema(
+                df_or_table=updated_table,
+                expected_schema=[
+                    ("id", "bigint"),
+                    ("profile", "struct<name:string,age:int,email:string>"),
+                ],
+                logger=logger,
+            )
+
             table_schema = updated_table.schema
 
             # Get nested 'profile' struct and its fields
@@ -351,6 +366,14 @@ class TestSchemaEvolutionApply:
             logger.phase("Verify: Doubly-nested schema updated correctly")
 
             updated_table = spark_session.table(table_id)
+            verify_table_schema(
+                df_or_table=updated_table,
+                expected_schema=[
+                    ("id", "bigint"),
+                    ("profile", "struct<name:string,details:struct<age:int,country:string>>"),
+                ],
+                logger=logger,
+            )
 
             # Verify full table content including nested NULLs
             verify_table_content(
@@ -481,6 +504,14 @@ class TestSchemaEvolutionApply:
             logger.phase("Verify: Array struct schema updated correctly")
 
             updated_table = spark_session.table(table_id)
+            verify_table_schema(
+                df_or_table=updated_table,
+                expected_schema=[
+                    ("id", "bigint"),
+                    ("events", "array<struct<type:string,ts:string,metadata:map<string,string>>>")
+                ],
+                logger=logger,
+            )
 
             # Verify full table content - old arrays should have metadata=NULL in elements
             # NOTE: Cannot use verify_table_content here because it tries to sort by arrays

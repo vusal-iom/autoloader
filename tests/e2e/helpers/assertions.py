@@ -4,7 +4,7 @@ E2E Test Assertions.
 Provides verification functions for test assertions.
 """
 
-from typing import Dict, Any, List, Optional
+from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 from pyspark.sql import SparkSession
 
 from tests.helpers.logger import TestLogger
@@ -209,6 +209,72 @@ def _verify_forward_compatibility(df, new_record_filter, new_count, new_fields, 
 # Content Verification
 # =============================================================================
 
+def _resolve_dataframe(df_or_table: Any, spark_session: Optional[SparkSession]):
+    """Return a DataFrame, Spark session, and name from df_or_table input."""
+    if isinstance(df_or_table, str):
+        if spark_session is None:
+            raise ValueError("spark_session is required when df_or_table is a table identifier")
+        df = spark_session.table(df_or_table)
+        table_name = df_or_table
+        return df, spark_session, table_name
+
+    if hasattr(df_or_table, 'schema') and hasattr(df_or_table, 'collect'):
+        df = df_or_table
+        if spark_session is None:
+            spark_session = df.sparkSession
+        table_name = "DataFrame"
+        return df, spark_session, table_name
+
+    raise ValueError(f"df_or_table must be DataFrame or string, got {type(df_or_table)}")
+
+
+def _schema_fields(schema) -> List[Dict[str, str]]:
+    return [{"name": field.name, "type": field.dataType.simpleString()} for field in schema.fields]
+
+
+def _normalize_schema_fields(fields: List[Dict[str, str]], ignore_case: bool, ignore_field_order: bool) -> List[Dict[str, str]]:
+    normalized = []
+    for field in fields:
+        normalized.append({
+            "name": field["name"].lower() if ignore_case else field["name"],
+            "type": field["type"].lower() if ignore_case else field["type"],
+        })
+
+    if ignore_field_order:
+        normalized.sort(key=lambda f: f["name"])
+
+    return normalized
+
+
+def _format_schema_for_logging(fields: List[Dict[str, str]]) -> str:
+    if not fields:
+        return "(empty schema)"
+    return "\n".join(f"- {field['name']}: {field['type']}" for field in fields)
+
+
+def _coerce_expected_schema(
+    expected_schema: Sequence[Union[Dict[str, str], Tuple[str, str]]]
+) -> List[Dict[str, str]]:
+    coerced: List[Dict[str, str]] = []
+    for field in expected_schema:
+        if isinstance(field, dict):
+            name = field.get("name")
+            type_str = field.get("type")
+        elif isinstance(field, (list, tuple)) and len(field) == 2:
+            name, type_str = field
+        else:
+            raise ValueError(
+                "expected_schema must be a sequence of dicts with 'name'/'type' or (name, type) tuples"
+            )
+
+        if name is None or type_str is None:
+            raise ValueError("expected_schema entries must include both name and type")
+
+        coerced.append({"name": str(name), "type": str(type_str)})
+
+    return coerced
+
+
 def verify_table_content(
     df_or_table: Any,
     expected_data: List[Dict[str, Any]],
@@ -251,21 +317,7 @@ def verify_table_content(
     """
     from pyspark.sql.types import StructType
 
-    # Get DataFrame from input
-    if isinstance(df_or_table, str):
-        if spark_session is None:
-            raise ValueError("spark_session is required when df_or_table is a table identifier")
-        df = spark_session.table(df_or_table)
-        table_name = df_or_table
-    elif hasattr(df_or_table, 'schema') and hasattr(df_or_table, 'collect'):
-        # Check for DataFrame duck-typing (works for both regular and Spark Connect DataFrames)
-        df = df_or_table
-        table_name = "DataFrame"
-        # Get spark session from DataFrame if not provided
-        if spark_session is None:
-            spark_session = df.sparkSession
-    else:
-        raise ValueError(f"df_or_table must be DataFrame or string, got {type(df_or_table)}")
+    df, spark_session, table_name = _resolve_dataframe(df_or_table, spark_session)
 
     if logger:
         logger.step(f"Verifying content of {table_name}")
@@ -326,6 +378,45 @@ def verify_table_content(
         logger.success(f"Content verification passed: {actual_count} rows match exactly")
 
     return df
+
+
+def verify_table_schema(
+    df_or_table: Any,
+    expected_schema: Sequence[Union[Dict[str, str], Tuple[str, str]]],
+    spark_session: Optional[SparkSession] = None,
+    ignore_field_order: bool = True,
+    ignore_case: bool = False,
+    logger: Optional[TestLogger] = None,
+):
+    """Verify a DataFrame or table schema matches the expected definition."""
+    df, _, table_name = _resolve_dataframe(df_or_table, spark_session)
+
+    actual_fields = _schema_fields(df.schema)
+    expected_fields = _coerce_expected_schema(expected_schema)
+
+    normalized_actual = _normalize_schema_fields(actual_fields, ignore_case, ignore_field_order)
+    normalized_expected = _normalize_schema_fields(expected_fields, ignore_case, ignore_field_order)
+
+    if logger:
+        logger.step(f"Verifying schema of {table_name}")
+        logger.metric("Actual Schema", _format_schema_for_logging(actual_fields))
+        logger.metric("Expected Schema", _format_schema_for_logging(expected_fields))
+
+    if normalized_actual != normalized_expected:
+        error_lines = [
+            f"\nSchema verification failed for {table_name}",
+            "Expected Schema:",
+            _format_schema_for_logging(expected_fields),
+            "",
+            "Actual Schema:",
+            _format_schema_for_logging(actual_fields),
+        ]
+        raise AssertionError("\n".join(error_lines))
+
+    if logger:
+        logger.success("Schema verification passed", always=True)
+
+    return df.schema
 
 
 def _generate_detailed_diff(actual_rows, expected_rows, columns, table_name):

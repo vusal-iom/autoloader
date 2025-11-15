@@ -6,7 +6,7 @@ Tests validate the helper function with real Spark DataFrames and Iceberg tables
 import pytest
 import uuid
 
-from tests.e2e.helpers.assertions import verify_table_content
+from tests.e2e.helpers.assertions import verify_table_content, verify_table_schema
 from tests.helpers.logger import TestLogger
 
 
@@ -381,3 +381,83 @@ class TestVerifyTableContent:
 
         assert "spark_session is required" in str(exc_info.value)
         print("Missing spark_session correctly raised error")
+
+
+@pytest.mark.integration
+class TestVerifyTableSchema:
+    """Integration tests for verify_table_schema helper."""
+
+    def test_schema_verification_with_table(self, spark_session):
+        table_name = f"schema_helper_{uuid.uuid4().hex[:8]}"
+        table_id = f"test_catalog.test_db.{table_name}"
+
+        try:
+            spark_session.sql(f"""
+                CREATE TABLE {table_id} (
+                    id BIGINT,
+                    profile STRUCT<
+                        name: STRING,
+                        age: INT
+                    >
+                ) USING iceberg
+            """)
+
+            verify_table_schema(
+                df_or_table=table_id,
+                expected_schema=[
+                    ("id", "bigint"),
+                    ("profile", "struct<name:string,age:int>"),
+                ],
+                spark_session=spark_session,
+            )
+
+            print("Schema verification passed for table input")
+
+        finally:
+            spark_session.sql(f"DROP TABLE IF EXISTS {table_id}")
+
+    def test_schema_mismatch_raises_error(self, spark_session):
+        table_name = f"schema_helper_mismatch_{uuid.uuid4().hex[:8]}"
+        table_id = f"test_catalog.test_db.{table_name}"
+
+        try:
+            spark_session.sql(f"""
+                CREATE TABLE {table_id} (
+                    id BIGINT,
+                    name STRING,
+                    email STRING
+                ) USING iceberg
+            """)
+
+            with pytest.raises(AssertionError) as exc_info:
+                verify_table_schema(
+                    df_or_table=table_id,
+                    expected_schema=[
+                        {"name": "id", "type": "bigint"},
+                        {"name": "name", "type": "string"},
+                        {"name": "created_at", "type": "timestamp"},
+                    ],
+                    spark_session=spark_session,
+                )
+
+            assert "Schema verification failed" in str(exc_info.value)
+            print("Schema mismatch correctly raised error")
+
+        finally:
+            spark_session.sql(f"DROP TABLE IF EXISTS {table_id}")
+
+    def test_dataframe_input_with_ignore_case(self, spark_session):
+        df = spark_session.createDataFrame([
+            {"id": 1, "name": "Alice"},
+        ])
+
+        verify_table_schema(
+            df_or_table=df,
+            expected_schema=[
+                ("ID", "BIGINT"),
+                ("NAME", "STRING"),
+            ],
+            ignore_case=True,
+        )
+
+        print("Schema verification passed for DataFrame input")
