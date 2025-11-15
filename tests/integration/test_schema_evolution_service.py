@@ -8,7 +8,7 @@ import uuid
 from typing import Any, Dict, List
 
 from app.services.schema_evolution_service import SchemaEvolutionService
-from tests.e2e.helpers.assertions import verify_table_content, verify_table_schema
+from tests.helpers.assertions import verify_table_content, verify_table_schema
 from tests.helpers.logger import TestLogger
 
 

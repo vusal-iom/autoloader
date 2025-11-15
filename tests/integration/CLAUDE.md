@@ -46,6 +46,14 @@ Unlike e2e tests, integration tests:
 
 ## Best Practices
 
+### Shared Assertion Helpers
+
+Import `verify_table_content` and `verify_table_schema` from `tests.helpers.assertions` so both integration and e2e tests share the exact same verification logic:
+
+```python
+from tests.helpers.assertions import verify_table_content, verify_table_schema
+```
+
 ### Schema Field Verification
 
 Prefer the `verify_table_schema` helper for readable, deterministic schema checks. It prints the full schema (types + nested structures) which makes evolution diffs easy to review.

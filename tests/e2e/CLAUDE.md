@@ -62,6 +62,8 @@ class TestFeature:
 
 All helpers available from `tests.e2e.helpers`:
 
+> Shared schema/content helpers live in `tests.helpers.assertions`. You can import them directly from there or via `tests.e2e.helpers`.
+
 **Constants:**
 - `DEFAULT_RUN_TIMEOUT`, `PREFECT_FLOW_TIMEOUT`, `DEFAULT_POLL_INTERVAL`
 - `SUCCESS_STATUSES`, `FAILED_STATUSES`, `RUNNING_STATUSES`

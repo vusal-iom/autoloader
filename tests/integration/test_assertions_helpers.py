@@ -6,7 +6,7 @@ Tests validate the helper function with real Spark DataFrames and Iceberg tables
 import pytest
 import uuid
 
-from tests.e2e.helpers.assertions import verify_table_content, verify_table_schema
+from tests.helpers.assertions import verify_table_content, verify_table_schema
 from tests.helpers.logger import TestLogger
 
 
