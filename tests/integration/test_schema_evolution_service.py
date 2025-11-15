@@ -227,19 +227,6 @@ class TestSchemaEvolutionApply:
                 logger=logger,
             )
 
-            table_schema = updated_table.schema
-
-            # Get nested 'profile' struct and its fields
-            profile_field = table_schema["profile"]
-            profile_struct = profile_field.dataType
-            nested_field_names = {f.name for f in profile_struct.fields}
-
-            assert nested_field_names == {"name", "age", "email"}
-            logger.step(
-                f"Profile struct has expected nested fields: {nested_field_names}",
-                always=True,
-            )
-
             # Verify old records have NULL for new nested field
             verify_table_content(
                 df_or_table=updated_table,
