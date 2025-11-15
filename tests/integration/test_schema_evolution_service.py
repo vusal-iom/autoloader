@@ -105,7 +105,7 @@ class TestSchemaEvolutionApply:
         verify_table_content(
             df_or_table=table_id,
             expected_data=[
-                {"id": 1, "name": "Alice", "email": None},
+                {"id": 1, "name": "Alice", "email": None, "created_at": None},
                 {"id": 2, "name": "Bob", "email": None, "created_at": None},
                 {"id": 3, "name": "Charlie", "email": "charlie@example.com", "created_at": "2024-01-15T10:30:00"},
             ],
