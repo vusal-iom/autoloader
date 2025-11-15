@@ -84,9 +84,12 @@ class TestSchemaEvolutionApply:
         )
         logger.step("Applied schema evolution (append_new_columns)", always=True)
 
-        logger.phase("Verify: Schema updated correctly")
+        # Insert the new data and verify, matching the flow used in other tests
+        df.writeTo(table_id).append()
+        logger.step("Inserted new record with evolved schema", always=True)
 
-        # 1. Verify table schema has new columns
+        logger.phase("Verify: Schema and data updated correctly")
+
         verify_table_schema(
             df_or_table=table_id,
             expected_schema=[
@@ -99,22 +102,6 @@ class TestSchemaEvolutionApply:
             logger=logger,
         )
 
-        # 2. Verify old records have NULL for new columns
-        verify_table_content(
-            df_or_table=table_id,
-            expected_data=[
-                {"id": 1, "name": "Alice", "email": None, "created_at": None},
-                {"id": 2, "name": "Bob", "email": None, "created_at": None},
-            ],
-            spark_session=spark_session,
-            logger=logger
-        )
-        logger.step("Old records have NULL for new columns", always=True)
-
-        # 3. Insert DataFrame with evolved schema and verify
-        df.writeTo(table_id).append()
-
-        # 4. Verify no data loss - all records present with correct values
         verify_table_content(
             df_or_table=table_id,
             expected_data=[
