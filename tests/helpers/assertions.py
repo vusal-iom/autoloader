@@ -246,7 +246,7 @@ def verify_table_content(
         logger.metric("Actual Rows", actual_count)
 
     if actual_count != expected_count or actual_rows != expected_rows:
-        _generate_detailed_diff(actual_rows, expected_rows, columns, table_name)
+        _generate_detailed_diff(actual_rows, expected_rows, compare_columns, table_name)
 
     if logger:
         logger.success(f"Content verification passed: {actual_count} rows match exactly")
