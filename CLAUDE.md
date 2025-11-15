@@ -176,3 +176,14 @@ Parallel: Spark Connect (Remote execution)
 See documentation under `docs/batch-processing/`:
 - `batch-processing-implementation-guide.md` - Comprehensive implementation guide
 - `phase1-s3-implementation-guide.md` - Phase 1 S3 implementation details
+
+## Running Tests (local)
+
+- Use the repo virtualenv: `source .venv/bin/activate`
+- Set env if needed: `.env.test`; pytest picks up `.env.test` via `python-dotenv`
+- Integration tests require local deps (Spark connect, MinIO, Postgres, Prefect) started via test fixtures; User will manually run it. 
+- the fastest single test run looks like:
+  - `pytest tests/integration/test_assertions_helpers.py -k test_missing_expected_column_raises_error -q --disable-warnings --maxfail=1`
+- Full integration suite: `pytest tests/integration -q` (slower; ensure services are healthy)
+- Unit tests: `pytest tests/unit -q`
+- If you see missing packages, install the `requirements.txt` file
