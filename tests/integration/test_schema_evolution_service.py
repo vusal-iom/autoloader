@@ -3,7 +3,6 @@ Integration tests for SchemaEvolutionService.apply_schema_evolution with real Ic
 
 Tests validate that DDL operations actually work with real Spark and Iceberg.
 """
-import uuid
 from typing import Any, Dict, List
 
 import pytest
@@ -20,24 +19,6 @@ from pyspark.sql.types import (
 from app.services.schema_evolution_service import SchemaEvolutionService
 from tests.helpers.assertions import verify_table_content, verify_table_schema
 from tests.helpers.logger import TestLogger
-
-
-@pytest.fixture
-def temporary_table(spark_session):
-    """Factory fixture that creates unique Iceberg tables and cleans them up."""
-    created: List[tuple[str, TestLogger]] = []
-
-    def _create(prefix: str, logger: TestLogger) -> str:
-        table_name = f"{prefix}_{uuid.uuid4().hex[:8]}"
-        table_id = f"test_catalog.test_db.{table_name}"
-        created.append((table_id, logger))
-        return table_id
-
-    yield _create
-
-    for table_id, logger in created:
-        spark_session.sql(f"DROP TABLE IF EXISTS {table_id}")
-        logger.step(f"Cleaned up table: {table_id}", always=True)
 
 
 @pytest.mark.integration
