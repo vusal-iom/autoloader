@@ -225,8 +225,8 @@ class TestVerifyTableContent:
             )
 
         error_message = str(exc_info.value).lower()
-        assert "missing columns" in error_message
-        assert "email" in error_message
+        assert "columns do not align" in error_message
+        assert "row 1" in error_message
         print("Missing expected column correctly raised error")
 
     def test_mismatch_row_count_raises_error(self, spark_session):

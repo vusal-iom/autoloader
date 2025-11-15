@@ -177,18 +177,20 @@ def verify_table_content(
     if logger:
         logger.step(f"Verifying content of {table_name}")
 
+    table_columns = df.columns
+
     if columns is None:
-        columns = df.columns
+        display_columns = table_columns
     else:
         missing_cols = set(columns) - set(df.columns)
         if missing_cols:
             raise ValueError(f"Columns not found in DataFrame: {missing_cols}")
+        display_columns = columns
 
-    if ignore_column_order:
-        columns = sorted(columns)
+    compare_columns = sorted(display_columns) if ignore_column_order else display_columns
 
     if expected_data:
-        expected_columns_set = set(columns)
+        expected_columns_set = set(compare_columns)
         for idx, row in enumerate(expected_data, 1):
             if isinstance(row, dict):
                 row_dict = row
@@ -200,14 +202,27 @@ def verify_table_content(
             missing_in_row = expected_columns_set - set(row_dict.keys())
             extra_in_row = set(row_dict.keys()) - expected_columns_set
             if missing_in_row or extra_in_row:
+                table_label = table_name or "DataFrame"
+                error_lines = [
+                    "\nverify_table_content expected_data column mismatch for "
+                    f"{table_label} (row {idx}):",
+                    f"- table columns (in table order): {list(table_columns)}",
+                    f"- expected columns: {list(display_columns)}",
+                    f"- columns used for compare: {list(compare_columns)}",
+                    f"- row columns: {list(row_dict.keys())}",
+                ]
+                if missing_in_row:
+                    error_lines.append(f"- missing columns: {sorted(missing_in_row)}")
+                if extra_in_row:
+                    error_lines.append(f"- extra columns: {sorted(extra_in_row)}")
+                error_lines.append(f"- offending row data: {row_dict}")
+                error_lines.append("- hint: include all table columns in expected_data, or pass columns=[...] to verify a subset")
+                print("\n".join(error_lines))
                 raise AssertionError(
-                    f"Expected row {idx} has column mismatch. "
-                    f"Missing columns: {sorted(missing_in_row)}; "
-                    f"Extra columns: {sorted(extra_in_row)}; "
-                    f"Expected columns: {columns}"
+                    f"verify_table_content expected_data columns do not align for {table_label} (row {idx}); see printed diff above"
                 )
 
-    df_to_compare = df.select(*columns)
+    df_to_compare = df.select(*compare_columns)
 
     if not expected_data:
         expected_df = spark_session.createDataFrame([], df_to_compare.schema)
@@ -216,9 +231,9 @@ def verify_table_content(
         if ignore_column_order:
             expected_df = expected_df.select(*sorted(expected_df.columns))
 
-    if ignore_row_order and columns:
-        df_to_compare = df_to_compare.sort(*columns)
-        expected_df = expected_df.sort(*columns)
+    if ignore_row_order and compare_columns:
+        df_to_compare = df_to_compare.sort(*compare_columns)
+        expected_df = expected_df.sort(*compare_columns)
 
     actual_rows = df_to_compare.collect()
     expected_rows = expected_df.collect()
