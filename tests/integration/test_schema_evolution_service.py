@@ -87,21 +87,21 @@ class TestSchemaEvolutionApply:
         logger.phase("Verify: Schema updated correctly")
 
         # 1. Verify table schema has new columns
-        updated_table = spark_session.table(table_id)
         verify_table_schema(
-            df_or_table=updated_table,
+            df_or_table=table_id,
             expected_schema=[
                 ("id", "bigint"),
                 ("name", "string"),
                 ("email", "string"),
                 ("created_at", "string"),
             ],
+            spark_session=spark_session,
             logger=logger,
         )
 
         # 2. Verify old records have NULL for new columns
         verify_table_content(
-            df_or_table=updated_table,
+            df_or_table=table_id,
             expected_data=[
                 {"id": 1, "name": "Alice", "email": None, "created_at": None},
                 {"id": 2, "name": "Bob", "email": None, "created_at": None},
