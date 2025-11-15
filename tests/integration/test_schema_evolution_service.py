@@ -189,25 +189,21 @@ class TestSchemaEvolutionApply:
             comparison = SchemaEvolutionService.compare_schemas(df.schema, target_schema)
             assert comparison.has_changes, "Should detect schema changes for nested struct"
 
-            # NOTE: Current limitation - nested field additions are detected as TYPE_CHANGE
-            # The comparison shows: profile: struct<name,age> -> struct<name,age,email>
-            assert len(comparison.modified_columns) == 1, "Should detect profile struct type change"
-            col_name, old_type, new_type = comparison.modified_columns[0]
-            assert col_name == "profile"
-            assert "name:string,age:int" in old_type
-            assert "email:string" in new_type
+            nested_fields = [path for path, _ in comparison.nested_field_additions]
+            assert nested_fields == ["profile.email"], "Should detect nested field addition"
+            assert not comparison.modified_columns, "Nested additions should not be treated as type changes"
             logger.step(
-                f"Schema comparison detected struct type change: {col_name} from {old_type} to {new_type}",
+                f"Schema comparison detected nested addition(s): {nested_fields}",
                 always=True,
             )
 
-            # Manually add the nested field using Iceberg's nested field support
-            logger.step("Manually adding nested field using Iceberg DDL", always=True)
-            spark_session.sql(f"""
-                ALTER TABLE {table_id}
-                ADD COLUMN profile.email STRING
-            """)
-            logger.step("Applied nested field evolution via ALTER TABLE", always=True)
+            SchemaEvolutionService.apply_schema_evolution(
+                spark=spark_session,
+                table_identifier=table_id,
+                comparison=comparison,
+                strategy="append_new_columns",
+            )
+            logger.step("Applied nested field evolution via SchemaEvolutionService", always=True)
 
             # Insert the new data
             df.writeTo(table_id).append()
@@ -332,27 +328,21 @@ class TestSchemaEvolutionApply:
             comparison = SchemaEvolutionService.compare_schemas(df.schema, target_schema)
             assert comparison.has_changes, "Should detect nested struct addition"
 
-            # NOTE: Current limitation - SchemaEvolutionService treats nested struct
-            # changes as TYPE_CHANGE (modified_columns) rather than recognizing
-            # nested field additions. The comparison shows:
-            # profile: struct<name:string> -> struct<name:string,details:struct<...>>
-            assert len(comparison.modified_columns) == 1, "Should detect profile struct type change"
-            col_name, old_type, new_type = comparison.modified_columns[0]
-            assert col_name == "profile"
-            assert old_type == "struct<name:string>"
-            assert "details:struct<" in new_type
+            nested_fields = [path for path, _ in comparison.nested_field_additions]
+            assert nested_fields == ["profile.details"], "Should capture nested struct addition"
+            assert not comparison.modified_columns
             logger.step(
-                f"Schema comparison detected struct type change: {col_name} from {old_type} to {new_type}",
+                f"Schema comparison detected nested addition(s): {nested_fields}",
                 always=True,
             )
 
-            # For this test, we'll manually evolve the schema using Iceberg's nested field support
-            logger.step("Manually adding nested field using Iceberg DDL", always=True)
-            spark_session.sql(f"""
-                ALTER TABLE {table_id}
-                ADD COLUMN profile.details STRUCT<age: INT, country: STRING>
-            """)
-            logger.step("Applied nested field evolution via ALTER TABLE", always=True)
+            SchemaEvolutionService.apply_schema_evolution(
+                spark=spark_session,
+                table_identifier=table_id,
+                comparison=comparison,
+                strategy="append_new_columns",
+            )
+            logger.step("Applied nested struct evolution via SchemaEvolutionService", always=True)
 
             # Insert the new data with the evolved schema
             df.writeTo(table_id).append()
@@ -468,24 +458,21 @@ class TestSchemaEvolutionApply:
             comparison = SchemaEvolutionService.compare_schemas(df.schema, target_schema)
             assert comparison.has_changes, "Should detect array struct field addition"
 
-            # NOTE: Current limitation - changes in array element structs are detected as TYPE_CHANGE
-            assert len(comparison.modified_columns) == 1, "Should detect events array type change"
-            col_name, old_type, new_type = comparison.modified_columns[0]
-            assert col_name == "events"
-            assert "array<struct<type:string,ts:string>>" == old_type
-            assert "metadata:map<string,string>" in new_type
+            nested_fields = [path for path, _ in comparison.nested_field_additions]
+            assert nested_fields == ["events.element.metadata"], "Should detect nested array path"
+            assert not comparison.modified_columns
             logger.step(
-                f"Schema comparison detected array type change: {col_name}",
+                f"Schema comparison detected array nested addition(s): {nested_fields}",
                 always=True,
             )
 
-            # Manually add the nested field to the array struct
-            logger.step("Manually adding field to array struct using Iceberg DDL", always=True)
-            spark_session.sql(f"""
-                ALTER TABLE {table_id}
-                ADD COLUMN events.element.metadata MAP<STRING, STRING>
-            """)
-            logger.step("Applied array struct field evolution via ALTER TABLE", always=True)
+            SchemaEvolutionService.apply_schema_evolution(
+                spark=spark_session,
+                table_identifier=table_id,
+                comparison=comparison,
+                strategy="append_new_columns",
+            )
+            logger.step("Applied array struct field evolution via SchemaEvolutionService", always=True)
 
             # Insert the new data
             df.writeTo(table_id).append()
@@ -684,18 +671,10 @@ class TestSchemaEvolutionApply:
             target_schema = spark_session.table(table_id).schema
 
             comparison = SchemaEvolutionService.compare_schemas(df.schema, target_schema)
-
-            # NOTE: Current limitation - field order differences are detected as TYPE_CHANGE
-            # because simpleString() preserves field order. This is a known limitation.
-            # The comparison shows: struct<name,age,email> != struct<email,name,age>
-            assert comparison.has_changes, "Field order changes ARE detected as changes (current limitation)"
-            assert len(comparison.modified_columns) == 1, "Should detect profile as modified"
-            col_name, old_type, new_type = comparison.modified_columns[0]
-            assert col_name == "profile"
-            logger.step(
-                f"NOTE: Field order difference detected as type change: {old_type} vs {new_type} (limitation)",
-                always=True,
-            )
+            assert comparison.has_changes is False, "Field order-only differences should be ignored"
+            assert comparison.modified_columns == []
+            assert comparison.nested_field_additions == []
+            logger.step("Field order correctly treated as no-op", always=True)
 
             logger.phase("Verify: Data can be written without evolution")
 

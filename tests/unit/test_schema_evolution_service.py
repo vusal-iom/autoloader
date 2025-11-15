@@ -133,3 +133,29 @@ class TestSchemaComparison:
              "new_type": "string"},
         ]
         assert actual_changes == expected_changes
+
+    def test_compare_schemas_nested_column_addition(self):
+        """Nested struct additions should be reported separately."""
+        target_schema = StructType([
+            StructField("id", IntegerType(), False),
+            StructField("profile", StructType([
+                StructField("name", StringType(), True)
+            ]), True)
+        ])
+
+        source_schema = StructType([
+            StructField("id", IntegerType(), False),
+            StructField("profile", StructType([
+                StructField("name", StringType(), True),
+                StructField("email", StringType(), True)
+            ]), True)
+        ])
+
+        comparison = SchemaEvolutionService.compare_schemas(source_schema, target_schema)
+
+        assert comparison.has_changes is True
+        assert comparison.added_columns == []
+        assert comparison.modified_columns == []
+        assert [(path, dt.simpleString()) for path, dt in comparison.nested_field_additions] == [
+            ("profile.email", "string")
+        ]

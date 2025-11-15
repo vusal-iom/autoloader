@@ -3,7 +3,7 @@ Schema Evolution Service - Handles schema comparison and evolution strategies.
 """
 
 from typing import List, Dict, Tuple, Optional
-from pyspark.sql.types import StructType, StructField, DataType
+from pyspark.sql.types import StructType, StructField, DataType, ArrayType, MapType
 from dataclasses import dataclass
 from enum import Enum
 import logging
@@ -16,6 +16,7 @@ class SchemaChangeType(str, Enum):
     NEW_COLUMN = "NEW_COLUMN"
     REMOVED_COLUMN = "REMOVED_COLUMN"
     TYPE_CHANGE = "TYPE_CHANGE"
+    NEW_NESTED_COLUMN = "NEW_NESTED_COLUMN"
 
 
 @dataclass
@@ -42,6 +43,7 @@ class SchemaComparison:
     added_columns: List[StructField]
     removed_columns: List[StructField]
     modified_columns: List[Tuple[str, str, str]]  # (name, old_type, new_type)
+    nested_field_additions: List[Tuple[str, DataType]]
     has_changes: bool
 
     def get_changes(self) -> List[SchemaChange]:
@@ -68,6 +70,13 @@ class SchemaComparison:
                 column_name=col_name,
                 old_type=old_type,
                 new_type=new_type
+            ))
+
+        for path, data_type in self.nested_field_additions:
+            changes.append(SchemaChange(
+                change_type=SchemaChangeType.NEW_NESTED_COLUMN,
+                column_name=path,
+                new_type=data_type.simpleString()
             ))
 
         return changes
@@ -97,6 +106,8 @@ class SchemaMismatchError(Exception):
                 msg_parts.append(f"  - {change.column_name} ({change.old_type}) [REMOVED]")
             elif change.change_type == SchemaChangeType.TYPE_CHANGE:
                 msg_parts.append(f"  ~ {change.column_name}: {change.old_type} → {change.new_type} [TYPE CHANGED]")
+            elif change.change_type == SchemaChangeType.NEW_NESTED_COLUMN:
+                msg_parts.append(f"  + {change.column_name} ({change.new_type}) [NEW NESTED]")
 
         msg_parts.append("\nAction Required:")
         msg_parts.append("1. Update on_schema_change setting to 'append_new_columns' or 'sync_all_columns'")
@@ -138,25 +149,72 @@ class SchemaEvolutionService:
             if name not in source_fields
         ]
 
-        # Detect type changes
-        modified_columns = []
+        # Detect type changes and nested additions
+        modified_columns: List[Tuple[str, str, str]] = []
+        nested_field_additions: List[Tuple[str, DataType]] = []
+
+        def compare_types(source_type: DataType, target_type: DataType, parent_path: str) -> bool:
+            """Return True if there is an incompatible type change."""
+            if isinstance(source_type, StructType) and isinstance(target_type, StructType):
+                return compare_struct_types(source_type, target_type, parent_path)
+            if isinstance(source_type, ArrayType) and isinstance(target_type, ArrayType):
+                return compare_array_types(source_type, target_type, parent_path)
+            if isinstance(source_type, MapType) and isinstance(target_type, MapType):
+                return compare_map_types(source_type, target_type, parent_path)
+
+            return source_type.simpleString() != target_type.simpleString()
+
+        def compare_struct_types(source_struct: StructType, target_struct: StructType, parent_path: str) -> bool:
+            type_changed = False
+            source_fields_map = {field.name.lower(): field for field in source_struct.fields}
+            target_fields_map = {field.name.lower(): field for field in target_struct.fields}
+
+            for name, source_field in source_fields_map.items():
+                child_path = f"{parent_path}.{source_field.name}" if parent_path else source_field.name
+                if name not in target_fields_map:
+                    nested_field_additions.append((child_path, source_field.dataType))
+                    continue
+                target_field = target_fields_map[name]
+                if compare_types(source_field.dataType, target_field.dataType, child_path):
+                    type_changed = True
+
+            for name in target_fields_map.keys():
+                if name not in source_fields_map:
+                    return True
+
+            return type_changed
+
+        def compare_array_types(source_array: ArrayType, target_array: ArrayType, parent_path: str) -> bool:
+            element_path = f"{parent_path}.element" if parent_path else "element"
+            element_change = compare_types(source_array.elementType, target_array.elementType, element_path)
+            contains_null_diff = source_array.containsNull != target_array.containsNull
+            return element_change or contains_null_diff
+
+        def compare_map_types(source_map: MapType, target_map: MapType, parent_path: str) -> bool:
+            if source_map.keyType.simpleString() != target_map.keyType.simpleString():
+                return True
+            value_path = f"{parent_path}.value" if parent_path else "value"
+            value_change = compare_types(source_map.valueType, target_map.valueType, value_path)
+            return value_change or source_map.valueContainsNull != target_map.valueContainsNull
+
         for name in source_fields.keys():
             if name in target_fields:
-                source_type = source_fields[name].dataType.simpleString()
-                target_type = target_fields[name].dataType.simpleString()
-                if source_type != target_type:
+                source_field = source_fields[name]
+                target_field = target_fields[name]
+                if compare_types(source_field.dataType, target_field.dataType, source_field.name):
                     modified_columns.append((
-                        source_fields[name].name,  # Use original case
-                        target_type,
-                        source_type
+                        source_field.name,
+                        target_field.dataType.simpleString(),
+                        source_field.dataType.simpleString()
                     ))
 
-        has_changes = bool(added_columns or removed_columns or modified_columns)
+        has_changes = bool(added_columns or removed_columns or modified_columns or nested_field_additions)
 
         return SchemaComparison(
             added_columns=added_columns,
             removed_columns=removed_columns,
             modified_columns=modified_columns,
+            nested_field_additions=nested_field_additions,
             has_changes=has_changes
         )
 
@@ -257,24 +315,31 @@ class SchemaEvolutionService:
 
         Adds new columns from source, but keeps removed columns.
         """
-        if not comparison.added_columns:
+        if not comparison.added_columns and not comparison.nested_field_additions:
             logger.debug("No new columns to add")
             return
 
-        logger.info(f"Adding {len(comparison.added_columns)} new columns to {table_identifier}")
+        if comparison.added_columns:
+            logger.info(f"Adding {len(comparison.added_columns)} new columns to {table_identifier}")
 
-        for field in comparison.added_columns:
-            col_name = field.name
-            col_type = field.dataType.simpleString()
+            for field in comparison.added_columns:
+                col_name = field.name
+                col_type = field.dataType.simpleString()
 
-            try:
-                alter_sql = f"ALTER TABLE {table_identifier} ADD COLUMN {col_name} {col_type}"
-                logger.debug(f"Executing: {alter_sql}")
-                spark.sql(alter_sql)
-                logger.info(f"Added column: {col_name} ({col_type})")
-            except Exception as e:
-                logger.error(f"Failed to add column {col_name}: {e}")
-                raise
+                try:
+                    alter_sql = f"ALTER TABLE {table_identifier} ADD COLUMN {col_name} {col_type}"
+                    logger.debug(f"Executing: {alter_sql}")
+                    spark.sql(alter_sql)
+                    logger.info(f"Added column: {col_name} ({col_type})")
+                except Exception as e:
+                    logger.error(f"Failed to add column {col_name}: {e}")
+                    raise
+
+        SchemaEvolutionService._apply_nested_field_additions(
+            spark,
+            table_identifier,
+            comparison.nested_field_additions
+        )
 
     @staticmethod
     def _apply_sync_all_columns(
@@ -302,6 +367,12 @@ class SchemaEvolutionService:
                 except Exception as e:
                     logger.error(f"Failed to add column {col_name}: {e}")
                     raise
+
+        SchemaEvolutionService._apply_nested_field_additions(
+            spark,
+            table_identifier,
+            comparison.nested_field_additions
+        )
 
         # Remove old columns
         if comparison.removed_columns:
@@ -333,3 +404,49 @@ class SchemaEvolutionService:
                         raise
                 else:
                     raise IncompatibleTypeChangeError(col_name, old_type, new_type)
+
+    @staticmethod
+    def _apply_nested_field_additions(
+        spark,
+        table_identifier: str,
+        nested_field_additions: List[Tuple[str, DataType]]
+    ) -> None:
+        """Apply nested field additions using Iceberg's dotted path syntax."""
+        if not nested_field_additions:
+            logger.debug("No nested fields to add")
+            return
+
+        logger.info(f"Adding {len(nested_field_additions)} nested fields to {table_identifier}")
+
+        for path, data_type in nested_field_additions:
+            col_type = SchemaEvolutionService._format_data_type_for_sql(data_type)
+
+            try:
+                alter_sql = f"ALTER TABLE {table_identifier} ADD COLUMN {path} {col_type}"
+                logger.debug(f"Executing: {alter_sql}")
+                spark.sql(alter_sql)
+                logger.info(f"Added nested field: {path} ({col_type})")
+            except Exception as e:
+                logger.error(f"Failed to add nested field {path}: {e}")
+                raise
+
+    @staticmethod
+    def _format_data_type_for_sql(data_type: DataType) -> str:
+        """Convert a Spark DataType into an Iceberg SQL compatible string."""
+        if isinstance(data_type, StructType):
+            inner = ", ".join(
+                f"{field.name}: {SchemaEvolutionService._format_data_type_for_sql(field.dataType)}"
+                for field in data_type.fields
+            )
+            return f"STRUCT<{inner}>"
+
+        if isinstance(data_type, ArrayType):
+            element_type = SchemaEvolutionService._format_data_type_for_sql(data_type.elementType)
+            return f"ARRAY<{element_type}>"
+
+        if isinstance(data_type, MapType):
+            key_type = SchemaEvolutionService._format_data_type_for_sql(data_type.keyType)
+            value_type = SchemaEvolutionService._format_data_type_for_sql(data_type.valueType)
+            return f"MAP<{key_type}, {value_type}>"
+
+        return data_type.simpleString().upper()
