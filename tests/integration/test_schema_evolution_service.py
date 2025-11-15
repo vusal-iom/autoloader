@@ -219,7 +219,7 @@ class TestSchemaEvolutionApply:
             expected_data=[
                 {
                     "id": 1,
-                    "profile": {"name": "Alice", "age": 30, "email": None},
+                    "profile": {"name": "Alice", "age": 30},
                 },
                 {
                     "id": 2,

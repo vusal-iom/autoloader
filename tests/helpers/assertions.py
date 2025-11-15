@@ -79,10 +79,11 @@ def _coerce_expected_schema(
     return coerced
 
 
-def _generate_detailed_diff(actual_rows, expected_rows, columns, table_name):
+def _generate_detailed_diff(actual_rows, expected_rows, columns, table_name, note: Optional[str] = None):
     """Generate detailed diff output showing mismatches."""
     actual_count = len(actual_rows)
     expected_count = len(expected_rows)
+    table_label = table_name or "DataFrame"
 
     def row_to_dict(row, cols):
         return {col: row[col] for col in cols}
@@ -157,7 +158,9 @@ def _generate_detailed_diff(actual_rows, expected_rows, columns, table_name):
             error_lines.append(f"  {i}. {row}")
         error_lines.append("")
 
-    raise AssertionError("\n".join(error_lines))
+    print("\n".join(error_lines))
+    suffix = f" ({note})" if note else ""
+    raise AssertionError(f"Content verification failed for {table_label}; see printed diff above{suffix}")
 
 
 def verify_table_content(
@@ -224,10 +227,53 @@ def verify_table_content(
 
     df_to_compare = df.select(*compare_columns)
 
+    missing_note: Optional[str] = None
+
     if not expected_data:
         expected_df = spark_session.createDataFrame([], df_to_compare.schema)
     else:
-        expected_df = spark_session.createDataFrame(expected_data, schema=df_to_compare.schema)
+        from pyspark.sql.types import StructType, ArrayType
+
+        missing_marker = "<missing_in_expected_data>"
+        missing_inserted = False
+
+        def _fill_missing_struct_fields(value, data_type):
+            if value is None or data_type is None:
+                return value
+
+            if isinstance(data_type, StructType):
+                if not isinstance(value, dict):
+                    return value
+                filled = dict(value)
+                for field in data_type.fields:
+                    if field.name not in filled:
+                        filled[field.name] = missing_marker
+                        nonlocal_missing_inserted[0] = True
+                    else:
+                        filled[field.name] = _fill_missing_struct_fields(filled[field.name], field.dataType)
+                return filled
+
+            if isinstance(data_type, ArrayType) and isinstance(data_type.elementType, StructType):
+                if not isinstance(value, list):
+                    return value
+                return [_fill_missing_struct_fields(elem, data_type.elementType) for elem in value]
+
+            return value
+
+        schema_by_name = {field.name: field.dataType for field in df_to_compare.schema.fields}
+        filled_expected = []
+        nonlocal_missing_inserted = [False]
+        for row in expected_data:
+            row_dict = row if isinstance(row, dict) else row.asDict(recursive=True)
+            filled_row = {}
+            for col in compare_columns:
+                filled_row[col] = _fill_missing_struct_fields(row_dict.get(col), schema_by_name.get(col))
+            filled_expected.append(filled_row)
+
+        if nonlocal_missing_inserted[0]:
+            missing_note = f"'{missing_marker}' denotes fields not provided in expected_data"
+
+        expected_df = spark_session.createDataFrame(filled_expected, schema=df_to_compare.schema)
         if ignore_column_order:
             expected_df = expected_df.select(*sorted(expected_df.columns))
 
@@ -246,7 +292,7 @@ def verify_table_content(
         logger.metric("Actual Rows", actual_count)
 
     if actual_count != expected_count or actual_rows != expected_rows:
-        _generate_detailed_diff(actual_rows, expected_rows, compare_columns, table_name)
+        _generate_detailed_diff(actual_rows, expected_rows, compare_columns, table_name, note=missing_note)
 
     if logger:
         logger.success(f"Content verification passed: {actual_count} rows match exactly")
@@ -285,7 +331,8 @@ def verify_table_schema(
             "Actual Schema:",
             _format_schema_for_logging(actual_fields),
         ]
-        raise AssertionError("\n".join(error_lines))
+        print("\n".join(error_lines))
+        raise AssertionError(f"Schema verification failed for {table_name}; see printed diff above")
 
     if logger:
         logger.success("Schema verification passed", always=True)

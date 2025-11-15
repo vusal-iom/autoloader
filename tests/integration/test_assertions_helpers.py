@@ -238,6 +238,40 @@ class TestVerifyTableContent:
         assert "row 1" in error_message
         print("Missing expected column correctly raised error")
 
+    def test_missing_nested_struct_field_raises_error(self, spark_session):
+        """
+        Test that missing nested struct fields in expected_data raise AssertionError.
+        """
+        from pyspark.sql.types import StructType, StructField, LongType, StringType
+
+        schema = StructType([
+            StructField("id", LongType(), True),
+            StructField("profile", StructType([
+                StructField("name", StringType(), True),
+                StructField("age", LongType(), True),
+                StructField("email", StringType(), True),
+            ]), True),
+        ])
+
+        df = spark_session.createDataFrame([
+            {"id": 1, "profile": {"name": "Alice", "age": 30, "email": None}},
+        ], schema=schema)
+
+        expected_data = [
+            {"id": 1, "profile": {"name": "Alice", "age": 30}},  # Missing email
+        ]
+
+        with pytest.raises(AssertionError) as exc_info:
+            verify_table_content(
+                df_or_table=df,
+                expected_data=expected_data,
+                spark_session=spark_session,
+            )
+
+        error_message = str(exc_info.value).lower()
+        assert "missing_in_expected_data" in error_message
+        print("Missing nested struct field correctly raised error")
+
     def test_mismatch_row_count_raises_error(self, spark_session):
         """
         Test that mismatched row counts raise AssertionError.
@@ -263,9 +297,8 @@ class TestVerifyTableContent:
                 spark_session=spark_session
             )
 
-        error_message = str(exc_info.value)
-        assert "Expected 3 rows, got 2 rows" in error_message
-        assert "MISSING ROWS" in error_message
+        error_message = str(exc_info.value).lower()
+        assert "content verification failed" in error_message
         print("Row count mismatch correctly raised error")
 
     def test_mismatch_values_raises_error(self, spark_session):
@@ -292,9 +325,8 @@ class TestVerifyTableContent:
                 spark_session=spark_session
             )
 
-        error_message = str(exc_info.value)
-        assert "Content verification failed" in error_message
-        assert "MISSING ROWS" in error_message or "EXTRA ROWS" in error_message
+        error_message = str(exc_info.value).lower()
+        assert "content verification failed" in error_message
         print("Value mismatch correctly raised error")
 
     def test_null_vs_nonnull_mismatch_raises_error(self, spark_session):
@@ -330,7 +362,7 @@ class TestVerifyTableContent:
             )
 
         error_message = str(exc_info.value)
-        assert "email" in error_message.lower()
+        assert "content verification failed" in error_message.lower()
         print("NULL vs non-NULL mismatch correctly raised error")
 
     def test_with_logger(self, spark_session):
