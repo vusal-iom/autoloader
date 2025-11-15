@@ -3,8 +3,9 @@ Integration tests for assertion helpers (verify_table_content).
 
 Tests validate the helper function with real Spark DataFrames and Iceberg tables.
 """
-import pytest
 import uuid
+
+import pytest
 
 from tests.helpers.assertions import verify_table_content, verify_table_schema
 from tests.helpers.logger import TestLogger
@@ -209,9 +210,17 @@ class TestVerifyTableContent:
         Validates that verify_table_content enforces full column coverage
         when verifying entire tables (no columns override).
         """
+        from pyspark.sql.types import (LongType, StringType, StructField,
+                                       StructType)
+
+        schema = StructType([
+            StructField("id", LongType(), True),
+            StructField("name", StringType(), True),
+            StructField("email", StringType(), True),
+        ])
         df = spark_session.createDataFrame([
             {"id": 1, "name": "Alice", "email": None},
-        ])
+        ], schema=schema)
 
         expected_data = [
             {"id": 1, "name": "Alice"},  # Missing "email"
@@ -295,7 +304,8 @@ class TestVerifyTableContent:
         Validates that verify_table_content correctly distinguishes
         between NULL and non-NULL values.
         """
-        from pyspark.sql.types import StructType, StructField, LongType, StringType
+        from pyspark.sql.types import (LongType, StringType, StructField,
+                                       StructType)
 
         # Create DataFrame with explicit schema to handle None values
         schema = StructType([
@@ -357,7 +367,8 @@ class TestVerifyTableContent:
 
         Validates that verify_table_content handles empty DataFrames correctly.
         """
-        from pyspark.sql.types import StructType, StructField, LongType, StringType
+        from pyspark.sql.types import (LongType, StringType, StructField,
+                                       StructType)
 
         schema = StructType([
             StructField("id", LongType(), True),
