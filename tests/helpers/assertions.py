@@ -206,7 +206,7 @@ def verify_table_content(
                 error_lines = [
                     "\nverify_table_content expected_data column mismatch for "
                     f"{table_label} (row {idx}):",
-                    f"- table columns (in table order): {list(table_columns)}",
+                    f"- table columns: {list(table_columns)}",
                     f"- expected columns: {list(display_columns)}",
                     f"- columns used for compare: {list(compare_columns)}",
                     f"- row columns: {list(row_dict.keys())}",
