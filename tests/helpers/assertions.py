@@ -187,6 +187,26 @@ def verify_table_content(
     if ignore_column_order:
         columns = sorted(columns)
 
+    if expected_data:
+        expected_columns_set = set(columns)
+        for idx, row in enumerate(expected_data, 1):
+            if isinstance(row, dict):
+                row_dict = row
+            elif hasattr(row, "asDict"):
+                row_dict = row.asDict(recursive=True)
+            else:
+                raise ValueError("expected_data entries must be dict-like or Row instances")
+
+            missing_in_row = expected_columns_set - set(row_dict.keys())
+            extra_in_row = set(row_dict.keys()) - expected_columns_set
+            if missing_in_row or extra_in_row:
+                raise AssertionError(
+                    f"Expected row {idx} has column mismatch. "
+                    f"Missing columns: {sorted(missing_in_row)}; "
+                    f"Extra columns: {sorted(extra_in_row)}; "
+                    f"Expected columns: {columns}"
+                )
+
     df_to_compare = df.select(*columns)
 
     if not expected_data:

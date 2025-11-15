@@ -202,6 +202,33 @@ class TestVerifyTableContent:
 
         print("Subset column verification passed")
 
+    def test_missing_expected_column_raises_error(self, spark_session):
+        """
+        Test that missing columns in expected_data raise AssertionError.
+
+        Validates that verify_table_content enforces full column coverage
+        when verifying entire tables (no columns override).
+        """
+        df = spark_session.createDataFrame([
+            {"id": 1, "name": "Alice", "email": None},
+        ])
+
+        expected_data = [
+            {"id": 1, "name": "Alice"},  # Missing "email"
+        ]
+
+        with pytest.raises(AssertionError) as exc_info:
+            verify_table_content(
+                df_or_table=df,
+                expected_data=expected_data,
+                spark_session=spark_session,
+            )
+
+        error_message = str(exc_info.value).lower()
+        assert "missing columns" in error_message
+        assert "email" in error_message
+        print("Missing expected column correctly raised error")
+
     def test_mismatch_row_count_raises_error(self, spark_session):
         """
         Test that mismatched row counts raise AssertionError.
