@@ -16,6 +16,8 @@ from pyspark.sql.types import (
     StructType,
 )
 
+from chispa.dataframe_comparer import *
+
 from app.services.schema_evolution_service import SchemaEvolutionService
 from tests.helpers.assertions import verify_table_content, verify_table_schema
 from tests.helpers.logger import TestLogger
@@ -66,7 +68,16 @@ class TestSchemaEvolutionApply:
                 "created_at": "2024-01-15T10:30:00"
             }
         ]
-        df = spark_session.createDataFrame(json_data)
+
+        # Explicitly define schema to avoid Spark inferring wrong schema
+        new_schema = StructType([
+            StructField("id", LongType(), True),
+            StructField("name", StringType(), True),
+            StructField("email", StringType(), True),
+            StructField("created_at", StringType(), True)
+        ])
+
+        df = spark_session.createDataFrame(json_data, schema=new_schema)
         logger.step("Created DataFrame with evolved schema", always=True)
 
         target_schema = spark_session.table(table_id).schema
@@ -88,29 +99,20 @@ class TestSchemaEvolutionApply:
         df.writeTo(table_id).append()
         logger.step("Inserted new record with evolved schema", always=True)
 
+
         logger.phase("Verify: Schema and data updated correctly")
-
-        verify_table_schema(
-            df_or_table=table_id,
-            expected_schema=[
-                ("id", "bigint"),
-                ("name", "string"),
-                ("email", "string"),
-                ("created_at", "string"),
-            ],
-            spark_session=spark_session,
-            logger=logger,
-        )
-
-        verify_table_content(
-            df_or_table=table_id,
-            expected_data=[
-                {"id": 1, "name": "Alice", "email": None, "created_at": None},
-                {"id": 2, "name": "Bob", "email": None, "created_at": None},
-                {"id": 3, "name": "Charlie", "email": "charlie@example.com", "created_at": "2024-01-15T10:30:00"},
-            ],
-            spark_session=spark_session,
-            logger=logger
+        df_actual = spark_session.table(table_id)
+        expected_data: List[Dict[str, Any]] = [
+            {"id": 1, "name": "Alice", "email": None, "created_at": None},
+            {"id": 2, "name": "Bob", "email": None, "created_at": None},
+            {"id": 3, "name": "Charlie", "email": "charlie@example.com", "created_at": "2024-01-15T10:30:00"},
+        ]
+        df_expected = spark_session.createDataFrame(expected_data, schema=new_schema)
+        assert_df_equality(
+            df1=df_actual,
+            df2=df_expected,
+            ignore_column_order=True,
+            ignore_row_order=True,
         )
         logger.success(f"All verifications passed for {table_id}", always=True)
 
