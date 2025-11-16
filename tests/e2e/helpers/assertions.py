@@ -4,7 +4,6 @@ from typing import Any, Dict, List, Optional
 
 from pyspark.sql import SparkSession
 
-from tests.helpers.assertions import verify_table_content, verify_table_schema
 from tests.helpers.logger import TestLogger
 
 from .constants import SUCCESS_STATUSES

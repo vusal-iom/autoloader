@@ -14,8 +14,8 @@
 ```python
 from tests.e2e.helpers import (
     TestLogger, create_standard_ingestion, trigger_run,
-    wait_for_run_completion, assert_run_metrics, verify_table_data,
-    verify_table_content, generate_unique_table_name, get_table_identifier,
+    wait_for_run_completion, assert_run_metrics,
+    generate_unique_table_name, get_table_identifier,
     print_test_summary
 )
 
@@ -88,8 +88,6 @@ All helpers available from `tests.e2e.helpers`:
 **Assertions:**
 - `assert_run_metrics(run, expected_files, expected_records, logger=logger)`
 - `verify_table_data(spark_session, table_id, expected_count, ...)` - Verify schema and count
-- `verify_table_schema(df_or_table, expected_schema, ...)` - Compare actual vs expected schema (names + types)
-- `verify_table_content(df_or_table, expected_data, ...)` - Verify complete table content including all values and NULLs
 - `verify_schema_evolution(spark_session, table_id, ...)` - Verify backward/forward compatibility
 - `print_test_summary([("Label", value), ...])`
 

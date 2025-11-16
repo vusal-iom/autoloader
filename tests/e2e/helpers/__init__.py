@@ -45,8 +45,6 @@ from .run_helpers import (
 from .assertions import (
     assert_run_metrics,
     verify_table_data,
-    verify_table_content,
-    verify_table_schema,
     verify_schema_evolution,
     print_test_summary,
 )
@@ -89,8 +87,6 @@ __all__ = [
     # Assertions
     "assert_run_metrics",
     "verify_table_data",
-    "verify_table_content",
-    "verify_table_schema",
     "verify_schema_evolution",
     "print_test_summary",
     # Prefect Helpers
