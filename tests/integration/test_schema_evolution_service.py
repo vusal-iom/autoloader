@@ -100,7 +100,7 @@ class TestSchemaEvolutionApply:
 
 
         logger.phase("Verify: Schema and data updated correctly")
-        df_actual = spark_session.table(table_id)
+        df_actual = spark_session.table(table_id).orderBy("id")
         expected_data: List[Dict[str, Any]] = [
             {"id": 1, "name": "Alice", "email": None, "created_at": None},
             {"id": 2, "name": "Bob", "email": None, "created_at": None},
@@ -111,7 +111,6 @@ class TestSchemaEvolutionApply:
             df1=df_actual,
             df2=df_expected,
             ignore_column_order=True,
-            ignore_row_order=True,
         )
         logger.success(f"All verifications passed for {table_id}", always=True)
 
@@ -204,7 +203,7 @@ class TestSchemaEvolutionApply:
 
         logger.phase("Verify: Nested schema updated correctly")
 
-        df_actual = spark_session.table(table_id)
+        df_actual = spark_session.table(table_id).orderBy("id")
         expected_data: List[Dict[str, Any]] = [
             {
                 "id": 1,
@@ -228,7 +227,6 @@ class TestSchemaEvolutionApply:
             df1=df_actual,
             df2=df_expected,
             ignore_column_order=True,
-            ignore_row_order=True,
         )
         logger.success(f"All nested verifications passed for {table_id}", always=True)
 
@@ -323,7 +321,7 @@ class TestSchemaEvolutionApply:
 
         logger.phase("Verify: Doubly-nested schema updated correctly")
 
-        df_actual = spark_session.table(table_id)
+        df_actual = spark_session.table(table_id).orderBy("id")
         expected_data: List[Dict[str, Any]] = [
             {
                 "id": 1,
@@ -346,7 +344,6 @@ class TestSchemaEvolutionApply:
             df1=df_actual,
             df2=df_expected,
             ignore_column_order=True,
-            ignore_row_order=True,
         )
         logger.success(f"Doubly-nested struct verifications passed for {table_id}", always=True)
 
@@ -445,7 +442,7 @@ class TestSchemaEvolutionApply:
 
         logger.phase("Verify: Array struct schema updated correctly")
 
-        df_actual = spark_session.table(table_id)
+        df_actual = spark_session.table(table_id).orderBy("id")
         expected_data: List[Dict[str, Any]] = [
             {
                 "id": 1,
@@ -472,7 +469,6 @@ class TestSchemaEvolutionApply:
             df1=df_actual,
             df2=df_expected,
             ignore_column_order=True,
-            ignore_row_order=True,
         )
         logger.success(f"Array of structs verifications passed for {table_id}", always=True)
 
@@ -630,7 +626,7 @@ class TestSchemaEvolutionApply:
         df.writeTo(table_id).append()
         logger.step("Successfully wrote reordered data without evolution", always=True)
 
-        df_actual = spark_session.table(table_id)
+        df_actual = spark_session.table(table_id).orderBy("id")
         new_schema = StructType([
             StructField("id", LongType(), True),
             StructField("profile", StructType([
@@ -654,6 +650,5 @@ class TestSchemaEvolutionApply:
             df1=df_actual,
             df2=df_expected,
             ignore_column_order=True,
-            ignore_row_order=True,
         )
         logger.success(f"Field order independence verified for {table_id}", always=True)
