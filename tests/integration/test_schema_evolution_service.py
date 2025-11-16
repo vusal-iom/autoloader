@@ -19,7 +19,6 @@ from pyspark.sql.types import (
 from chispa.dataframe_comparer import *
 
 from app.services.schema_evolution_service import SchemaEvolutionService
-from tests.helpers.assertions import verify_table_content, verify_table_schema
 from tests.helpers.logger import TestLogger
 
 
@@ -166,7 +165,7 @@ class TestSchemaEvolutionApply:
         ]
 
         # Explicitly define schema to avoid Spark inferring profile as MapType
-        schema = StructType([
+        new_schema = StructType([
             StructField("id", LongType(), True),
             StructField("profile", StructType([
                 StructField("name", StringType(), True),
@@ -175,7 +174,7 @@ class TestSchemaEvolutionApply:
             ]), True)
         ])
 
-        df = spark_session.createDataFrame(json_data, schema=schema)
+        df = spark_session.createDataFrame(json_data, schema=new_schema)
         logger.step("Created DataFrame with evolved nested schema (profile.email)", always=True)
 
         target_schema = spark_session.table(table_id).schema
@@ -205,39 +204,31 @@ class TestSchemaEvolutionApply:
 
         logger.phase("Verify: Nested schema updated correctly")
 
-        updated_table = spark_session.table(table_id)
-        verify_table_schema(
-            df_or_table=updated_table,
-            expected_schema=[
-                ("id", "bigint"),
-                ("profile", "struct<name:string,age:int,email:string>"),
-            ],
-            logger=logger,
-        )
-
-        # Verify old records have NULL for new nested field
-        verify_table_content(
-            df_or_table=updated_table,
-            expected_data=[
-                {
-                    "id": 1,
-                    "profile": {"name": "Alice", "age": 30},
+        df_actual = spark_session.table(table_id)
+        expected_data: List[Dict[str, Any]] = [
+            {
+                "id": 1,
+                "profile": {"name": "Alice", "age": 30, "email": None},
+            },
+            {
+                "id": 2,
+                "profile": {"name": "Bob", "age": 40, "email": None},
+            },
+            {
+                "id": 3,
+                "profile": {
+                    "name": "Charlie",
+                    "age": 25,
+                    "email": "charlie@example.com",
                 },
-                {
-                    "id": 2,
-                    "profile": {"name": "Bob", "age": 40, "email": None},
-                },
-                {
-                    "id": 3,
-                    "profile": {
-                        "name": "Charlie",
-                        "age": 25,
-                        "email": "charlie@example.com",
-                    },
-                },
-            ],
-            spark_session=spark_session,
-            logger=logger,
+            },
+        ]
+        df_expected = spark_session.createDataFrame(expected_data, schema=new_schema)
+        assert_df_equality(
+            df1=df_actual,
+            df2=df_expected,
+            ignore_column_order=True,
+            ignore_row_order=True,
         )
         logger.success(f"All nested verifications passed for {table_id}", always=True)
 
@@ -291,7 +282,7 @@ class TestSchemaEvolutionApply:
         ]
 
         # Explicitly define schema to avoid Spark inferring profile as MapType
-        schema = StructType([
+        new_schema = StructType([
             StructField("id", LongType(), True),
             StructField("profile", StructType([
                 StructField("name", StringType(), True),
@@ -302,7 +293,7 @@ class TestSchemaEvolutionApply:
             ]), True)
         ])
 
-        df = spark_session.createDataFrame(json_data, schema=schema)
+        df = spark_session.createDataFrame(json_data, schema=new_schema)
         logger.step("Created DataFrame with nested struct inside profile", always=True)
 
         target_schema = spark_session.table(table_id).schema
@@ -332,38 +323,30 @@ class TestSchemaEvolutionApply:
 
         logger.phase("Verify: Doubly-nested schema updated correctly")
 
-        updated_table = spark_session.table(table_id)
-        verify_table_schema(
-            df_or_table=updated_table,
-            expected_schema=[
-                ("id", "bigint"),
-                ("profile", "struct<name:string,details:struct<age:int,country:string>>"),
-            ],
-            logger=logger,
-        )
-
-        # Verify full table content including nested NULLs
-        verify_table_content(
-            df_or_table=updated_table,
-            expected_data=[
-                {
-                    "id": 1,
-                    "profile": {"name": "Alice", "details": None},
+        df_actual = spark_session.table(table_id)
+        expected_data: List[Dict[str, Any]] = [
+            {
+                "id": 1,
+                "profile": {"name": "Alice", "details": None},
+            },
+            {
+                "id": 2,
+                "profile": {"name": "Bob", "details": None},
+            },
+            {
+                "id": 3,
+                "profile": {
+                    "name": "Charlie",
+                    "details": {"age": 30, "country": "NL"},
                 },
-                {
-                    "id": 2,
-                    "profile": {"name": "Bob", "details": None},
-                },
-                {
-                    "id": 3,
-                    "profile": {
-                        "name": "Charlie",
-                        "details": {"age": 30, "country": "NL"}
-                    },
-                },
-            ],
-            spark_session=spark_session,
-            logger=logger,
+            },
+        ]
+        df_expected = spark_session.createDataFrame(expected_data, schema=new_schema)
+        assert_df_equality(
+            df1=df_actual,
+            df2=df_expected,
+            ignore_column_order=True,
+            ignore_row_order=True,
         )
         logger.success(f"Doubly-nested struct verifications passed for {table_id}", always=True)
 
@@ -421,7 +404,7 @@ class TestSchemaEvolutionApply:
         ]
 
         # Explicitly define schema to avoid Spark inferring metadata as MapType
-        schema = StructType([
+        new_schema = StructType([
             StructField("id", LongType(), True),
             StructField("events", ArrayType(
                 StructType([
@@ -432,7 +415,7 @@ class TestSchemaEvolutionApply:
             ), True)
         ])
 
-        df = spark_session.createDataFrame(json_data, schema=schema)
+        df = spark_session.createDataFrame(json_data, schema=new_schema)
         logger.step("Created DataFrame with evolved array struct (events.element.metadata)", always=True)
 
         target_schema = spark_session.table(table_id).schema
@@ -462,44 +445,35 @@ class TestSchemaEvolutionApply:
 
         logger.phase("Verify: Array struct schema updated correctly")
 
-        updated_table = spark_session.table(table_id)
-        verify_table_schema(
-            df_or_table=updated_table,
-            expected_schema=[
-                ("id", "bigint"),
-                ("events", "array<struct<type:string,ts:string,metadata:map<string,string>>>")
-            ],
-            logger=logger,
+        df_actual = spark_session.table(table_id)
+        expected_data: List[Dict[str, Any]] = [
+            {
+                "id": 1,
+                "events": [
+                    {"type": "click", "ts": "2024-01-01T10:00:00", "metadata": None},
+                ],
+            },
+            {
+                "id": 2,
+                "events": [
+                    {"type": "view", "ts": "2024-01-01T10:01:00", "metadata": None},
+                    {"type": "click", "ts": "2024-01-01T10:02:00", "metadata": None},
+                ],
+            },
+            {
+                "id": 3,
+                "events": [
+                    {"type": "click", "ts": "2024-01-01T10:03:00", "metadata": {"source": "web"}},
+                ],
+            },
+        ]
+        df_expected = spark_session.createDataFrame(expected_data, schema=new_schema)
+        assert_df_equality(
+            df1=df_actual,
+            df2=df_expected,
+            ignore_column_order=True,
+            ignore_row_order=True,
         )
-
-        # Verify full table content - old arrays should have metadata=NULL in elements
-        # NOTE: Cannot use verify_table_content here because it tries to sort by arrays
-        # which Spark doesn't support. Manually verify instead.
-        result = updated_table.orderBy("id").collect()
-        assert len(result) == 3, f"Expected 3 rows, got {len(result)}"
-
-        # Verify row 1
-        assert result[0]["id"] == 1
-        assert len(result[0]["events"]) == 1
-        assert result[0]["events"][0]["type"] == "click"
-        assert result[0]["events"][0]["ts"] == "2024-01-01T10:00:00"
-        assert result[0]["events"][0]["metadata"] is None
-
-        # Verify row 2
-        assert result[1]["id"] == 2
-        assert len(result[1]["events"]) == 2
-        assert result[1]["events"][0]["type"] == "view"
-        assert result[1]["events"][0]["metadata"] is None
-        assert result[1]["events"][1]["type"] == "click"
-        assert result[1]["events"][1]["metadata"] is None
-
-        # Verify row 3
-        assert result[2]["id"] == 3
-        assert len(result[2]["events"]) == 1
-        assert result[2]["events"][0]["type"] == "click"
-        assert result[2]["events"][0]["metadata"] == {"source": "web"}
-
-        logger.step("Verified all 3 rows with correct array struct values", always=True)
         logger.success(f"Array of structs verifications passed for {table_id}", always=True)
 
     def test_struct_to_map_type_change(self, spark_session, temporary_table):
@@ -630,7 +604,7 @@ class TestSchemaEvolutionApply:
 
         # Explicitly define schema with fields in DIFFERENT order from table
         # but same fields to test that field order doesn't matter
-        schema = StructType([
+        incoming_schema = StructType([
             StructField("id", LongType(), True),
             StructField("profile", StructType([
                 StructField("email", StringType(), True),  # Different order
@@ -639,7 +613,7 @@ class TestSchemaEvolutionApply:
             ]), True)
         ])
 
-        df = spark_session.createDataFrame(json_data, schema=schema)
+        df = spark_session.createDataFrame(json_data, schema=incoming_schema)
         logger.step("Created DataFrame with reordered nested fields", always=True)
 
         target_schema = spark_session.table(table_id).schema
@@ -656,22 +630,30 @@ class TestSchemaEvolutionApply:
         df.writeTo(table_id).append()
         logger.step("Successfully wrote reordered data without evolution", always=True)
 
-        updated_table = spark_session.table(table_id)
-
-        # Verify both records are present with correct values
-        verify_table_content(
-            df_or_table=updated_table,
-            expected_data=[
-                {
-                    "id": 1,
-                    "profile": {"name": "Alice", "age": 30, "email": "alice@example.com"},
-                },
-                {
-                    "id": 2,
-                    "profile": {"name": "Bob", "age": 40, "email": "bob@example.com"},
-                },
-            ],
-            spark_session=spark_session,
-            logger=logger,
+        df_actual = spark_session.table(table_id)
+        new_schema = StructType([
+            StructField("id", LongType(), True),
+            StructField("profile", StructType([
+                StructField("name", StringType(), True),
+                StructField("age", IntegerType(), True),
+                StructField("email", StringType(), True),
+            ]), True)
+        ])
+        expected_data: List[Dict[str, Any]] = [
+            {
+                "id": 1,
+                "profile": {"name": "Alice", "age": 30, "email": "alice@example.com"},
+            },
+            {
+                "id": 2,
+                "profile": {"name": "Bob", "age": 40, "email": "bob@example.com"},
+            },
+        ]
+        df_expected = spark_session.createDataFrame(expected_data, schema=new_schema)
+        assert_df_equality(
+            df1=df_actual,
+            df2=df_expected,
+            ignore_column_order=True,
+            ignore_row_order=True,
         )
         logger.success(f"Field order independence verified for {table_id}", always=True)
