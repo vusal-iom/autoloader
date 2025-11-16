@@ -18,7 +18,10 @@ from pyspark.sql.types import (
 
 from chispa.dataframe_comparer import *
 
-from app.services.schema_evolution_service import SchemaEvolutionService
+from app.services.schema_evolution_service import (
+    IncompatibleTypeChangeError,
+    SchemaEvolutionService,
+)
 from tests.helpers.logger import TestLogger
 
 
@@ -544,12 +547,17 @@ class TestSchemaEvolutionApply:
             always=True,
         )
 
-        # Verify this is recognized as incompatible
-        is_compatible = SchemaEvolutionService.is_type_change_compatible(old_type, new_type)
-        assert not is_compatible, "Struct to Map should be incompatible"
-        logger.step("Correctly identified as incompatible type change", always=True)
+        # Applying evolution should raise an incompatibility error
+        with pytest.raises(IncompatibleTypeChangeError) as exc_info:
+            SchemaEvolutionService.apply_schema_evolution(
+                spark=spark_session,
+                table_identifier=table_id,
+                comparison=comparison,
+                strategy="sync_all_columns",
+            )
 
-        logger.success(f"Struct to Map edge case validated for {table_id}", always=True)
+        assert exc_info.value.message == """Cannot change column 'profile' from struct<name:string,age:int> to map<string,string>"""
+        logger.step("apply_schema_evolution correctly raised IncompatibleTypeChangeError", always=True)
 
     def test_nested_field_order_changes_no_evolution(self, spark_session, temporary_table):
         """
