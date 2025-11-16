@@ -42,3 +42,4 @@ httpx==0.26.0
 testcontainers==3.7.1
 pytest-timeout==2.2.0
 faker==22.0.0
+chispa==0.11.1
