@@ -227,72 +227,77 @@ def verify_table_content(
 
     df_to_compare = df.select(*compare_columns)
 
+    from pyspark.sql.types import StructType, ArrayType
+
     missing_note: Optional[str] = None
+    missing_marker = "<missing_in_expected_data>"
 
-    if not expected_data:
-        expected_df = spark_session.createDataFrame([], df_to_compare.schema)
-    else:
-        from pyspark.sql.types import StructType, ArrayType
-
-        missing_marker = "<missing_in_expected_data>"
-        missing_inserted = False
-
-        def _fill_missing_struct_fields(value, data_type):
-            if value is None or data_type is None:
-                return value
-
-            if isinstance(data_type, StructType):
-                if not isinstance(value, dict):
-                    return value
-                filled = dict(value)
-                for field in data_type.fields:
-                    if field.name not in filled:
-                        filled[field.name] = missing_marker
-                        nonlocal_missing_inserted[0] = True
-                    else:
-                        filled[field.name] = _fill_missing_struct_fields(filled[field.name], field.dataType)
-                return filled
-
-            if isinstance(data_type, ArrayType) and isinstance(data_type.elementType, StructType):
-                if not isinstance(value, list):
-                    return value
-                return [_fill_missing_struct_fields(elem, data_type.elementType) for elem in value]
-
+    def _fill_missing_struct_fields(value, data_type):
+        if value is None or data_type is None:
             return value
 
+        if isinstance(data_type, StructType):
+            if not isinstance(value, dict):
+                return value
+            filled = dict(value)
+            for field in data_type.fields:
+                if field.name not in filled:
+                    filled[field.name] = missing_marker
+                else:
+                    filled[field.name] = _fill_missing_struct_fields(filled[field.name], field.dataType)
+            return filled
+
+        if isinstance(data_type, ArrayType) and isinstance(data_type.elementType, StructType):
+            if not isinstance(value, list):
+                return value
+            return [_fill_missing_struct_fields(elem, data_type.elementType) for elem in value]
+
+        return value
+
+    actual_rows_raw = df_to_compare.collect()
+    actual_dicts = [row.asDict(recursive=True) for row in actual_rows_raw]
+
+    def _sort_key(row_dict):
+        key_parts = []
+        for col in compare_columns:
+            val = row_dict.get(col)
+            if isinstance(val, (dict, list)):
+                key_parts.append(str(val))
+            else:
+                key_parts.append(str(val))
+        return tuple(key_parts)
+
+    if ignore_row_order and compare_columns:
+        actual_dicts = sorted(actual_dicts, key=_sort_key)
+
+    if not expected_data:
+        expected_dicts = []
+    else:
         schema_by_name = {field.name: field.dataType for field in df_to_compare.schema.fields}
-        filled_expected = []
-        nonlocal_missing_inserted = [False]
+        expected_dicts = []
         for row in expected_data:
             row_dict = row if isinstance(row, dict) else row.asDict(recursive=True)
             filled_row = {}
             for col in compare_columns:
                 filled_row[col] = _fill_missing_struct_fields(row_dict.get(col), schema_by_name.get(col))
-            filled_expected.append(filled_row)
+            expected_dicts.append(filled_row)
 
-        if nonlocal_missing_inserted[0]:
+        if ignore_row_order and compare_columns:
+            expected_dicts = sorted(expected_dicts, key=_sort_key)
+
+        # Flag if we inserted missing markers
+        if any(missing_marker in str(v) for row in expected_dicts for v in (row.values() if isinstance(row, dict) else [])):
             missing_note = f"'{missing_marker}' denotes fields not provided in expected_data"
 
-        expected_df = spark_session.createDataFrame(filled_expected, schema=df_to_compare.schema)
-        if ignore_column_order:
-            expected_df = expected_df.select(*sorted(expected_df.columns))
-
-    if ignore_row_order and compare_columns:
-        df_to_compare = df_to_compare.sort(*compare_columns)
-        expected_df = expected_df.sort(*compare_columns)
-
-    actual_rows = df_to_compare.collect()
-    expected_rows = expected_df.collect()
-
-    actual_count = len(actual_rows)
-    expected_count = len(expected_rows)
+    actual_count = len(actual_dicts)
+    expected_count = len(expected_dicts)
 
     if logger:
         logger.metric("Expected Rows", expected_count)
         logger.metric("Actual Rows", actual_count)
 
-    if actual_count != expected_count or actual_rows != expected_rows:
-        _generate_detailed_diff(actual_rows, expected_rows, compare_columns, table_name, note=missing_note)
+    if actual_count != expected_count or actual_dicts != expected_dicts:
+        _generate_detailed_diff(actual_dicts, expected_dicts, compare_columns, table_name, note=missing_note)
 
     if logger:
         logger.success(f"Content verification passed: {actual_count} rows match exactly")
