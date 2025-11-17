@@ -559,6 +559,10 @@ class TestSchemaEvolutionApply:
         assert exc_info.value.message == """Cannot change column 'profile' from struct<name:string,age:int> to map<string,string>"""
         logger.step("apply_schema_evolution correctly raised IncompatibleTypeChangeError", always=True)
 
+
+    # TODO: Last state: I need to finalize schema evalution. Need to review last few tests plus think about what I can add more.
+    #  Because this is important point. After that, probably schema inference. Or running batch import already
+
     def test_nested_field_order_changes_no_evolution(self, spark_session, temporary_table):
         """
         Test 5: Nested Field Order Changes - Should NOT Trigger Evolution
