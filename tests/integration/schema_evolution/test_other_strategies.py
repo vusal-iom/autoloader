@@ -2,20 +2,11 @@
 Integration tests for 'fail' and 'ignore' strategies.
 """
 import pytest
-from pyspark.sql.types import (
-    LongType,
-    StringType,
-    StructField,
-    StructType,
-)
 from chispa.dataframe_comparer import assert_df_equality
+from pyspark.sql.types import LongType, StringType, StructField, StructType
 
-
-
-from app.services.schema_evolution_service import (
-    SchemaEvolutionService,
-    SchemaMismatchError,
-)
+from app.services.schema_evolution_service import (SchemaEvolutionService,
+                                                   SchemaMismatchError)
 from tests.helpers.logger import TestLogger
 
 
@@ -58,7 +49,7 @@ class TestSchemaEvolutionOtherStrategies:
                 comparison=comparison,
                 strategy="fail"
             )
-        
+
         error = excinfo.value
         assert "Schema Mismatch Detected!" in error.message
 
@@ -84,10 +75,10 @@ class TestSchemaEvolutionOtherStrategies:
             StructField("name", StringType(), True),
             StructField("age", LongType(), True)
         ])
-        df = spark_session.createDataFrame(json_data, schema=new_schema)
+        new_data_df = spark_session.createDataFrame(json_data, schema=new_schema)
 
         target_schema = spark_session.table(table_id).schema
-        comparison = SchemaEvolutionService.compare_schemas(df.schema, target_schema)
+        comparison = SchemaEvolutionService.compare_schemas(new_data_df.schema, target_schema)
 
         assert comparison.has_changes
 
@@ -99,22 +90,26 @@ class TestSchemaEvolutionOtherStrategies:
             strategy="ignore"
         )
 
-        # Verify schema hasn't changed
-        df_actual = spark_session.table(table_id).orderBy("id")
-        expected_data = [
-            {"id": 1, "name": "Alice"},
-            {"id": 2, "name": "Bob"}
-        ]
-        expected_schema = StructType([
-            StructField("id", LongType(), True),
-            StructField("name", StringType(), True)
-        ])
-        df_expected = spark_session.createDataFrame(expected_data, schema=expected_schema)
-
+        # assert that table schema and data are unchanged
         assert_df_equality(
-            df1=df_actual,
-            df2=df_expected,
+            df1=spark_session.table(table_id).orderBy("id"),
+            df2=spark_session.createDataFrame(data=[{"id": 1, "name": "Alice"}], schema="id BIGINT, name STRING"),
             ignore_column_order=True,
         )
-        
-        logger.success("Schema remained unchanged with ignore strategy", always=True)
+
+        # Append data while ignoring extra columns (age) by aligning to target schema
+        df_aligned = SchemaEvolutionService.align_dataframe_to_target_schema(new_data_df, target_schema)
+        df_aligned.writeTo(table_id).append()
+
+        # assert table schema stays while we have also the second row (appended)
+        assert_df_equality(
+            df1=spark_session.table(table_id).orderBy("id"),
+            df2=spark_session.createDataFrame(
+                data=[
+                    {"id": 1, "name": "Alice"},
+                    {"id": 2, "name": "Bob"}
+                ],
+                schema="id BIGINT, name STRING"
+            ),
+            ignore_column_order=True,
+        )

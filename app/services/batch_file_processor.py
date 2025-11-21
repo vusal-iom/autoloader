@@ -297,10 +297,10 @@ class BatchFileProcessor:
 
             # For 'ignore' strategy, select only columns that exist in target table
             if strategy == "ignore":
-                target_columns = [field.name for field in target_schema.fields]
-                # Select columns from source that exist in target (in target order)
-                df = df.select(*[col for col in target_columns if col in df.columns])
-                logger.info(f"Strategy 'ignore': Dropped extra columns. Writing with {len(target_columns)} columns")
+                df = SchemaEvolutionService.align_dataframe_to_target_schema(df, target_schema)
+                logger.info(
+                    "Strategy 'ignore': Dropped extra columns and aligned missing columns to target schema"
+                )
                 return df
 
             # Apply evolution strategy for other strategies

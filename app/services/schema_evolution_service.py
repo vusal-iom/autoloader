@@ -3,6 +3,7 @@ Schema Evolution Service - Handles schema comparison and evolution strategies.
 """
 
 from typing import List, Dict, Tuple, Optional
+from pyspark.sql import DataFrame, functions as F
 from pyspark.sql.types import StructType, StructField, DataType, ArrayType, MapType
 from dataclasses import dataclass
 from enum import Enum
@@ -450,3 +451,27 @@ class SchemaEvolutionService:
             return f"MAP<{key_type}, {value_type}>"
 
         return data_type.simpleString().upper()
+
+    @staticmethod
+    def align_dataframe_to_target_schema(df: DataFrame, target_schema: StructType) -> DataFrame:
+        """
+        Align a DataFrame to the target schema by:
+        - Dropping extra columns not present in the target table
+        - Adding missing target columns with nulls
+        - Ordering/aliasing columns to match the target schema
+        """
+        source_columns_map = {col.lower(): col for col in df.columns}
+
+        aligned_columns = []
+        for field in target_schema.fields:
+            source_col_name = source_columns_map.get(field.name.lower())
+            if source_col_name:
+                aligned_columns.append(
+                    F.col(source_col_name).cast(field.dataType).alias(field.name)
+                )
+            else:
+                aligned_columns.append(
+                    F.lit(None).cast(field.dataType).alias(field.name)
+                )
+
+        return df.select(*aligned_columns)
