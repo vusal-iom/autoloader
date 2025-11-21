@@ -10,10 +10,11 @@ from pyspark.sql.types import (
     ArrayType,
     IntegerType,
     LongType,
+    DoubleType,
     MapType,
     StringType,
     StructField,
-    StructType,
+    StructType, FloatType,
 )
 
 from chispa.dataframe_comparer import *
@@ -31,7 +32,7 @@ class TestSchemaEvolutionApply:
 
     def test_append_new_columns_happy_path(self, spark_session, temporary_table):
         """
-        Test 1: Append New Columns Strategy - Happy Path
+        Append New Columns Strategy - Happy Path
 
         Validates the most common evolution scenario with real DDL:
         - Create table with base schema
@@ -119,7 +120,7 @@ class TestSchemaEvolutionApply:
 
     def test_append_new_nested_field_in_struct(self, spark_session, temporary_table):
         """
-        Test 2: Append New Nested Field in Struct - Happy Path
+        Append New Nested Field in Struct - Happy Path
 
         Scenario:
         - Base table has a nested `profile` struct with (name, age)
@@ -235,7 +236,7 @@ class TestSchemaEvolutionApply:
 
     def test_append_nested_struct_inside_struct(self, spark_session, temporary_table):
         """
-        Test 3: Append Nested Struct Inside Existing Struct
+        Append Nested Struct Inside Existing Struct
 
         Scenario:
         - Base table has `profile` struct with only `name`
@@ -352,7 +353,7 @@ class TestSchemaEvolutionApply:
 
     def test_append_field_in_array_of_structs(self, spark_session, temporary_table):
         """
-        Test 4: Append Field Inside Array of Structs
+        Append Field Inside Array of Structs
 
         Scenario:
         - Base table has `events` as ARRAY<STRUCT<type: STRING, ts: TIMESTAMP>>
@@ -477,7 +478,7 @@ class TestSchemaEvolutionApply:
 
     def test_struct_to_map_type_change(self, spark_session, temporary_table):
         """
-        Test: Struct to Map Type Change - Edge Case
+        Struct to Map Type Change - Edge Case
 
         Scenario:
         - Base table has `profile` as a STRUCT<name: STRING, age: INT>
@@ -559,13 +560,9 @@ class TestSchemaEvolutionApply:
         assert exc_info.value.message == """Cannot change column 'profile' from struct<name:string,age:int> to map<string,string>"""
         logger.step("apply_schema_evolution correctly raised IncompatibleTypeChangeError", always=True)
 
-
-    # TODO: Last state: I need to finalize schema evalution. Need to review last few tests plus think about what I can add more.
-    #  Because this is important point. After that, probably schema inference. Or running batch import already
-
     def test_nested_field_order_changes_no_evolution(self, spark_session, temporary_table):
         """
-        Test 5: Nested Field Order Changes - Should NOT Trigger Evolution
+        Nested Field Order Changes - Should NOT Trigger Evolution
 
         Scenario:
         - Base table has `profile` struct with (name, age, email)
@@ -664,3 +661,212 @@ class TestSchemaEvolutionApply:
             ignore_column_order=True,
         )
         logger.success(f"Field order independence verified for {table_id}", always=True)
+
+    def test_type_promotions(self, spark_session, temporary_table):
+        """
+        Type Promotions (Int -> Long, Float -> Double)
+
+        Scenario:
+        - Base table has `count` (INT) and `score` (FLOAT)
+        - New data has `count` (LONG) and `score` (DOUBLE)
+        - We expect evolution to promote both columns
+        """
+        logger = TestLogger()
+        logger.section("Integration Test: Type Promotions")
+
+        table_id = temporary_table(prefix="users_promotions", logger=logger)
+
+        logger.phase("Setup: Create table with INT and FLOAT columns")
+        spark_session.sql(f"CREATE TABLE {table_id} (id BIGINT, count INT, score FLOAT) USING iceberg")
+        spark_session.sql(f"INSERT INTO {table_id} VALUES (1, 100, 1.5)")
+        logger.step("Created table with INT and FLOAT columns", always=True)
+
+        logger.phase("Action: Create DataFrame with LONG and DOUBLE columns")
+        # Use values that require LongType and DoubleType
+        json_data = [{"id": 2, "count": 2147483648, "score": 2.123456789012345}]
+        new_schema = StructType([
+            StructField("id", LongType(), True),
+            StructField("count", LongType(), True),
+            StructField("score", DoubleType(), True)  # Spark defaults python float to Double
+        ])
+        df = spark_session.createDataFrame(json_data, schema=new_schema)
+
+        target_schema = spark_session.table(table_id).schema
+        comparison = SchemaEvolutionService.compare_schemas(df.schema, target_schema)
+
+        assert comparison.has_changes
+        assert len(comparison.modified_columns) == 2
+
+        # Verify specific changes
+        changes = {(col, old, new) for col, old, new in comparison.modified_columns}
+        # Spark simpleString() returns 'int' for IntegerType and 'bigint' for LongType
+        assert ("count", "int", "bigint") in changes
+        assert ("score", "float", "double") in changes
+        logger.step("Detected type changes: int->long and float->double", always=True)
+
+        SchemaEvolutionService.apply_schema_evolution(
+            spark=spark_session,
+            table_identifier=table_id,
+            comparison=comparison,
+            strategy="sync_all_columns"
+        )
+        logger.step("Applied schema evolution (sync_all_columns)", always=True)
+
+        df.writeTo(table_id).append()
+        logger.step("Inserted new record", always=True)
+
+        logger.phase("Verify: Column types and data updated correctly")
+        df_actual = spark_session.table(table_id).orderBy("id")
+
+        expected_data = [
+            {"id": 1, "count": 100, "score": 1.5},
+            {"id": 2, "count": 2147483648, "score": 2.123456789012345}
+        ]
+        df_expected = spark_session.createDataFrame(expected_data, schema=new_schema)
+
+        assert_df_equality(
+            df1=df_actual,
+            df2=df_expected,
+            ignore_column_order=True,
+        )
+        logger.success("Type promotions and data verification passed", always=True)
+
+    def test_sync_strategy_remove_column(self, spark_session, temporary_table):
+        """
+        Sync Strategy - Remove Column
+        """
+        logger = TestLogger()
+        logger.section("Integration Test: Sync Strategy - Remove Column")
+
+        table_id = temporary_table(prefix="users_remove", logger=logger)
+
+        spark_session.sql(f"CREATE TABLE {table_id} (id BIGINT, extra_col STRING) USING iceberg")
+        spark_session.sql(f"INSERT INTO {table_id} VALUES (1, 'remove_me')")
+
+        # New data missing 'extra_col'
+        json_data = [{"id": 2}]
+        new_schema = StructType([StructField("id", LongType(), True)])
+        df = spark_session.createDataFrame(json_data, schema=new_schema)
+
+        target_schema = spark_session.table(table_id).schema
+        comparison = SchemaEvolutionService.compare_schemas(df.schema, target_schema)
+
+        assert comparison.has_changes
+        assert len(comparison.removed_columns) == 1
+        assert comparison.removed_columns[0].name == "extra_col"
+
+        SchemaEvolutionService.apply_schema_evolution(
+            spark=spark_session,
+            table_identifier=table_id,
+            comparison=comparison,
+            strategy="sync_all_columns"
+        )
+
+        df.writeTo(table_id).append()
+
+        df_actual = spark_session.table(table_id).orderBy("id")
+        expected_data = [
+            {"id": 1},
+            {"id": 2}
+        ]
+        df_expected = spark_session.createDataFrame(expected_data, schema=new_schema)
+
+        assert_df_equality(
+            df1=df_actual,
+            df2=df_expected,
+            ignore_column_order=True,
+        )
+        logger.success("Column removed and data verified successfully", always=True)
+
+    def test_sync_strategy_mixed_changes(self, spark_session, temporary_table):
+        """
+        Sync Strategy - Mixed Changes (Add, Remove, Type Change)
+        """
+        logger = TestLogger()
+        logger.section("Integration Test: Sync Strategy - Mixed Changes")
+
+        table_id = temporary_table(prefix="users_mixed", logger=logger)
+
+        # Base: id (long), old_col (string), count (int)
+        spark_session.sql(f"""
+            CREATE TABLE {table_id} (
+                id BIGINT,
+                old_col STRING,
+                count INT
+            ) USING iceberg
+        """)
+        spark_session.sql(f"INSERT INTO {table_id} VALUES (1, 'keep', 100)")
+
+        # New: id (long), count (long) [promoted], new_col (string) [added], old_col [removed]
+        json_data = [{"id": 2, "count": 2147483648, "new_col": "fresh"}]
+        new_schema = StructType([
+            StructField("id", LongType(), True),
+            StructField("count", LongType(), True),
+            StructField("new_col", StringType(), True)
+        ])
+        df = spark_session.createDataFrame(json_data, schema=new_schema)
+
+        target_schema = spark_session.table(table_id).schema
+        comparison = SchemaEvolutionService.compare_schemas(df.schema, target_schema)
+
+        assert comparison.has_changes
+        assert len(comparison.added_columns) == 1
+        assert len(comparison.removed_columns) == 1
+        assert len(comparison.modified_columns) == 1
+
+        SchemaEvolutionService.apply_schema_evolution(
+            spark=spark_session,
+            table_identifier=table_id,
+            comparison=comparison,
+            strategy="sync_all_columns"
+        )
+
+        df.writeTo(table_id).append()
+
+        df_actual = spark_session.table(table_id).orderBy("id")
+
+        expected_data = [
+            {"id": 1, "count": 100, "old_col": "keep"},
+            {"id": 2, "count": 2147483648, "new_col": "fresh"}
+        ]
+        df_expected = spark_session.createDataFrame(expected_data, schema=new_schema)
+
+        assert_df_equality(
+            df1=df_actual,
+            df2=df_expected,
+            ignore_column_order=True,
+        )
+        logger.success("Mixed changes applied successfully", always=True)
+
+    def test_incompatible_type_change_long_to_int(self, spark_session, temporary_table):
+        """
+        Incompatible Type Change - Long to Int
+        """
+        logger = TestLogger()
+        logger.section("Integration Test: Incompatible Change - Long to Int")
+
+        table_id = temporary_table(prefix="users_bad_change", logger=logger)
+
+        spark_session.sql(f"CREATE TABLE {table_id} (id BIGINT, count BIGINT) USING iceberg")
+
+        # New data tries to change count to INT
+        json_data = [{"id": 1, "count": 100}]
+        new_schema = StructType([
+            StructField("id", LongType(), True),
+            StructField("count", IntegerType(), True)
+        ])
+        df = spark_session.createDataFrame(json_data, schema=new_schema)
+
+        target_schema = spark_session.table(table_id).schema
+        comparison = SchemaEvolutionService.compare_schemas(df.schema, target_schema)
+
+        assert comparison.has_changes
+
+        with pytest.raises(IncompatibleTypeChangeError):
+            SchemaEvolutionService.apply_schema_evolution(
+                spark=spark_session,
+                table_identifier=table_id,
+                comparison=comparison,
+                strategy="sync_all_columns"
+            )
+        logger.success("Incompatible change correctly rejected", always=True)
