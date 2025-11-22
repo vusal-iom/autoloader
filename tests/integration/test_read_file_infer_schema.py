@@ -6,6 +6,7 @@ import uuid
 import io
 import pytest
 from pyspark.sql.types import StructType, StructField, LongType, StringType
+from chispa import assert_df_equality
 
 from app.services.batch_file_processor import (
     BatchFileProcessor,
@@ -80,10 +81,12 @@ class TestReadFileInferSchema:
         assert df.schema == expected_schema
 
         # Trigger evaluation to ensure no lazy errors
-        rows = df.orderBy("id").collect()
-        assert [r["id"] for r in rows] == [1, 2]
-        assert [r["name"] for r in rows] == ["Alice", "Bob"]
-        assert [r["score"] for r in rows] == [95, 88]
+        expected_rows = [
+            (1, "Alice", 95),
+            (2, "Bob", 88)
+        ]
+        df_expected = spark_session.createDataFrame(expected_rows, schema=expected_schema)
+        assert_df_equality(df, df_expected, ignore_row_order=True)
         logger.success("Schema inferred and rows read as expected")
 
     def test_read_infer_schema_malformed_file_failfast(
