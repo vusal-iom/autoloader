@@ -51,5 +51,41 @@ __all__ = [
     # Mino
     "minio_config",
     "minio_client",
-    "lakehouse_bucket"
+    "lakehouse_bucket",
+    "upload_file"
 ]
+
+import json
+import io
+import pytest
+from typing import Any, List
+
+@pytest.fixture
+def upload_file(minio_client, lakehouse_bucket):
+    """
+    Fixture that provides a helper to upload files to MinIO and cleans them up after the test.
+    
+    Returns:
+        Callable[[str, Any], str]: A function that takes (key, content), uploads it, 
+                                   and returns the s3a:// path.
+    """
+    uploaded_keys: List[str] = []
+
+    def _upload(key: str, content: Any) -> str:
+        data = json.dumps(content).encode('utf-8')
+        minio_client.put_object(
+            Bucket=lakehouse_bucket,
+            Key=key,
+            Body=io.BytesIO(data)
+        )
+        uploaded_keys.append(key)
+        return f"s3a://{lakehouse_bucket}/{key}"
+
+    yield _upload
+
+    # Cleanup
+    for key in uploaded_keys:
+        try:
+            minio_client.delete_object(Bucket=lakehouse_bucket, Key=key)
+        except Exception:
+            pass  # Ignore cleanup errors
