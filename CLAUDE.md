@@ -213,7 +213,12 @@ assert_df_equality(df_actual, df_expected, ignore_column_order=True, ignore_row_
 - Start services: `docker-compose -f docker-compose.test.yml up -d` (wait for Spark Connect at `sc://localhost:15002` and MinIO at `http://localhost:9000`).
 - Catalog: `test_catalog.test_db`. Use real Spark Connect, never local/mocked sessions.
 - Data verification: Use `assert_df_equality` with explicit schemas for schema-evolution scenarios (covers schema + data). Populate expected NULLs for legacy rows and use `ignore_row_order/ignore_column_order` when needed.
-- **Fixtures:** Use `temporary_table` fixture for creating/cleaning up tables. Do not manually DROP tables.
+- **Fixtures:**
+  - **Table management:** Use `random_table_name_generator` (preferred) or `temporary_table` for creating/cleaning up tables. The former returns typed `TestTableMetadata` with `.table_name` and `.full_name` properties for better type safety. Do not manually DROP tables.
+  - **File uploads:** Use `upload_file` fixture (in `tests/integration/conftest.py`) for MinIO uploads with automatic cleanup. Accepts JSON-serializable content.
+- **Test structure:** Clearly separate phases with comments (`# 1. Setup`, `# 2. Action`, `# 3. Verification`) and use `TestLogger` for phase/step visibility.
+- **Result verification:** Always verify full objects (e.g., `assert result == {'record_count': 2}`) instead of individual keys.
+- **Error visibility:** "Tests are documentation" - always assert exception details for easy-to-read test and visibility.
 - Run: `pytest tests/integration/ -v` or a single file, e.g., `pytest tests/integration/test_schema_evolution_service.py -v`.
 
 ### E2E Tests
