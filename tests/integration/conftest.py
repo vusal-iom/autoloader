@@ -72,7 +72,13 @@ def upload_file(minio_client, lakehouse_bucket):
     uploaded_keys: List[str] = []
 
     def _upload(key: str, content: Any) -> str:
-        data = json.dumps(content).encode('utf-8')
+        if isinstance(content, bytes):
+            data = content
+        elif isinstance(content, str):
+            data = content.encode('utf-8')
+        else:
+            data = json.dumps(content).encode('utf-8')
+
         minio_client.put_object(
             Bucket=lakehouse_bucket,
             Key=key,

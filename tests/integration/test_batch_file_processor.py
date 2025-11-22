@@ -238,7 +238,7 @@ class TestBatchFileProcessor:
         logger.success("Table was not created")
 
     def test_process_single_file_malformed_file(
-        self, test_db, spark_client, spark_session, minio_client, lakehouse_bucket, ingestion
+        self, test_db, spark_client, spark_session, upload_file, ingestion
     ):
         """Test processing a malformed file."""
         logger = TestLogger()
@@ -252,13 +252,7 @@ class TestBatchFileProcessor:
         # Upload malformed content (not using fixture because fixture expects JSON serializable content)
         # We could enhance fixture to accept bytes, but for now manual upload is fine for this edge case
         content = b"{ this is not valid json }"
-        file_key = f"data/test_malformed_{uuid.uuid4()}.json"
-        minio_client.put_object(
-            Bucket=lakehouse_bucket,
-            Key=file_key,
-            Body=io.BytesIO(content)
-        )
-        s3_path = f"s3a://{lakehouse_bucket}/{file_key}"
+        s3_path = upload_file(key=f"data/test_malformed_{uuid.uuid4()}.json", content=content)
         
         ingestion.format_options = json.dumps({"mode": "FAILFAST"})
         test_db.commit()

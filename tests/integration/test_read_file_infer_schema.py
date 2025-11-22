@@ -90,7 +90,7 @@ class TestReadFileInferSchema:
         logger.success("Schema inferred and rows read as expected")
 
     def test_read_infer_schema_malformed_file_failfast(
-        self, test_db, spark_client, minio_client, lakehouse_bucket, ingestion
+        self, test_db, spark_client, upload_file, ingestion
     ):
         """
         Malformed JSON should raise FileProcessingError with category=data_malformed
@@ -105,13 +105,7 @@ class TestReadFileInferSchema:
 
         # Upload malformed content manually (not JSON-serializable)
         content = b"{ this is not valid json }"
-        file_key = f"data/read_infer_bad_{uuid.uuid4()}.json"
-        minio_client.put_object(
-            Bucket=lakehouse_bucket,
-            Key=file_key,
-            Body=io.BytesIO(content)
-        )
-        s3_path = f"s3a://{lakehouse_bucket}/{file_key}"
+        s3_path = upload_file(key=f"data/read_infer_bad_{uuid.uuid4()}.json", content=content)
         logger.step(f"Uploaded malformed file to {s3_path}")
 
         processor = BatchFileProcessor(spark_client, FileStateService(test_db), ingestion, test_db)
