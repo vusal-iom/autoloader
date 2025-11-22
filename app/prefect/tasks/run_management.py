@@ -83,10 +83,18 @@ def complete_run_record_task(run_id: str, metrics: Dict[str, int]):
         if not run:
             raise ValueError(f"Run not found: {run_id}")
 
-        # Update status
-        run.status = RunStatus.SUCCESS.value
+        success_count = metrics.get('success', 0)
+        failed_count = metrics.get('failed', 0)
+        status = RunStatus.SUCCESS.value
+        if failed_count > 0 and success_count > 0:
+            status = RunStatus.PARTIAL.value
+        elif failed_count > 0 and success_count == 0:
+            status = RunStatus.FAILED.value
+
+        # Update status and timing
+        run.status = status
         run.ended_at = datetime.utcnow()
-        run.files_processed = metrics['success'] + metrics['failed']
+        run.files_processed = success_count + failed_count
 
         # Calculate duration
         if run.started_at:
@@ -105,12 +113,30 @@ def complete_run_record_task(run_id: str, metrics: Dict[str, int]):
         run.records_ingested = int(result.total_records) if result.total_records else 0
         run.bytes_read = int(result.total_bytes) if result.total_bytes else 0
 
+        # Store error summary for UI visibility when applicable
+        errors_list = metrics.get('errors') or []
+        if failed_count > 0:
+            run.errors = {
+                "failed_files": failed_count,
+                "sample": errors_list[:5],
+                "counts": _count_by_category(errors_list)
+            }
+
         db.commit()
 
         logger.info(f"Run completed: {run_id} - {run.records_ingested} records")
 
     finally:
         db.close()
+
+
+def _count_by_category(errors: list) -> dict:
+    """Aggregate errors by category for quick UI summaries."""
+    counts = {}
+    for err in errors:
+        category = (err.get('error_type') if isinstance(err, dict) else None) or "unknown"
+        counts[category] = counts.get(category, 0) + 1
+    return counts
 
 
 @task(

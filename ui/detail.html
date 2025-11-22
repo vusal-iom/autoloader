@@ -64,35 +64,112 @@
     <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 24px; margin-bottom: 32px;">
       <!-- Left Column -->
       <div class="flex flex-col gap-6">
+        <!-- Attention Banner for Partial/Failed Runs -->
+        <div class="card" style="border: 1px solid var(--color-reef-200); background: var(--color-reef-50);">
+          <div class="flex items-center gap-3" style="align-items: flex-start;">
+            <div style="width: 44px; height: 44px; background: var(--color-reef-500); border-radius: 12px; display: flex; align-items: center; justify-content: center; color: white; font-weight: 700; font-size: 20px;">!</div>
+            <div class="flex flex-col gap-1" style="flex: 1;">
+              <div style="font-weight: 600;">Some files failed in the latest run</div>
+              <div class="text-sm text-secondary">3 files could not be ingested. Top issue: malformed JSON (mode=FAILFAST). Good files were ingested.</div>
+              <div class="flex gap-2" style="margin-top: 8px;">
+                <button class="btn btn-primary btn-small">Retry failed files</button>
+                <button class="btn btn-secondary btn-small">View failed list</button>
+              </div>
+            </div>
+            <div style="text-align: right;">
+              <div class="text-xs text-secondary">Last run</div>
+              <div style="font-weight: 500;">#1247 • 2m ago</div>
+              <div class="text-xs text-secondary">Status: Partial</div>
+            </div>
+          </div>
+        </div>
+
         <!-- Latest Run Status -->
         <div class="card">
           <h4 style="margin-bottom: 16px;">Latest Run Status</h4>
 
-          <div class="flex items-center justify-between" style="padding: 16px; background: var(--color-racing-50); border-radius: 6px; border: 1px solid var(--color-racing-300);">
+          <div class="flex items-center justify-between" style="padding: 16px; background: var(--color-apricot-50); border-radius: 6px; border: 1px solid var(--color-apricot-200);">
             <div class="flex items-center gap-3">
-              <div style="width: 48px; height: 48px; background: var(--color-racing-500); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-size: 24px;">
-                ✓
+              <div style="width: 48px; height: 48px; background: var(--color-apricot-500); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-size: 24px; font-weight: 700;">
+                !
               </div>
               <div class="flex flex-col gap-1">
-                <div style="font-weight: 500;">Completed Successfully</div>
+                <div style="font-weight: 500;">Completed with errors (Partial)</div>
                 <div class="text-sm text-secondary">Run #1247 • 2 minutes ago</div>
+                <div class="text-xs text-secondary">Spark stopped at malformed records (mode=FAILFAST)</div>
               </div>
             </div>
             <button class="btn btn-secondary btn-small" onclick="window.location.href='runs.html'">View Details</button>
           </div>
 
-          <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 16px;">
+          <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-top: 16px;">
             <div>
               <div class="text-xs text-secondary">Duration</div>
               <div style="font-weight: 500; margin-top: 4px;">2m 34s</div>
             </div>
             <div>
               <div class="text-xs text-secondary">Files Processed</div>
-              <div style="font-weight: 500; margin-top: 4px;">43</div>
+              <div style="font-weight: 500; margin-top: 4px;">40 / 43</div>
             </div>
             <div>
               <div class="text-xs text-secondary">Records Added</div>
               <div style="font-weight: 500; margin-top: 4px;">12,456</div>
+            </div>
+            <div>
+              <div class="text-xs text-secondary">Failed Files</div>
+              <div style="font-weight: 500; margin-top: 4px; color: var(--color-reef-500);">3 (retryable)</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- File Errors (Latest Run) -->
+        <div class="card">
+          <div class="flex justify-between items-center" style="margin-bottom: 12px;">
+            <h4>File Errors (Latest Run)</h4>
+            <div class="flex gap-2">
+              <button class="btn btn-secondary btn-small">Retry failed files</button>
+              <button class="btn btn-text btn-small">View all failed →</button>
+            </div>
+          </div>
+
+          <div class="flex flex-col gap-3">
+            <div style="padding: 12px; border: 1px solid var(--color-border-secondary); border-radius: 6px; background: var(--color-reef-50);">
+              <div class="flex justify-between">
+                <div style="font-weight: 500;">s3://marketing/data/events/2025/11/09/part-0043.json</div>
+                <span class="tag tag-failed">Malformed</span>
+              </div>
+              <div class="text-sm text-secondary" style="margin-top: 4px;">JSON parse failed at line 1 (mode=FAILFAST). Switch to PERMISSIVE or fix upstream file.</div>
+              <div class="flex gap-2" style="margin-top: 8px;">
+                <span class="tag tag-warning">Retryable</span>
+                <button class="btn btn-text btn-small">View logs</button>
+                <button class="btn btn-text btn-small" style="color: var(--color-success);">Retry this file</button>
+              </div>
+            </div>
+
+            <div style="padding: 12px; border: 1px solid var(--color-border-secondary); border-radius: 6px; background: var(--color-reef-50);">
+              <div class="flex justify-between">
+                <div style="font-weight: 500;">s3://marketing/data/events/2025/11/09/part-0042.json</div>
+                <span class="tag tag-failed">Schema mismatch</span>
+              </div>
+              <div class="text-sm text-secondary" style="margin-top: 4px;">Missing required column “email”. Align schema or allow evolution.</div>
+              <div class="flex gap-2" style="margin-top: 8px;">
+                <span class="tag tag-warning">Manual fix</span>
+                <button class="btn btn-text btn-small">View logs</button>
+                <button class="btn btn-text btn-small">Download file</button>
+              </div>
+            </div>
+
+            <div style="padding: 12px; border: 1px solid var(--color-border-secondary); border-radius: 6px; background: var(--color-reef-50);">
+              <div class="flex justify-between">
+                <div style="font-weight: 500;">s3://marketing/data/events/2025/11/09/part-0041.json</div>
+                <span class="tag tag-failed">Access</span>
+              </div>
+              <div class="text-sm text-secondary" style="margin-top: 4px;">Temporary S3 auth failure. Retrying is safe.</div>
+              <div class="flex gap-2" style="margin-top: 8px;">
+                <span class="tag tag-success">Retryable</span>
+                <button class="btn btn-text btn-small">View logs</button>
+                <button class="btn btn-text btn-small" style="color: var(--color-success);">Retry this file</button>
+              </div>
             </div>
           </div>
         </div>
@@ -161,10 +238,10 @@
               <tbody>
                 <tr>
                   <td class="text-sm"><a href="runs.html" style="color: var(--color-lake-500); text-decoration: none;">#1247</a></td>
-                  <td><span class="tag tag-completed">Completed</span></td>
+                  <td><span class="tag tag-warning">Partial</span></td>
                   <td class="text-sm text-secondary">2 min ago</td>
                   <td class="text-sm">2m 34s</td>
-                  <td class="text-sm">12,456</td>
+                  <td class="text-sm">12,456 (3 failed)</td>
                 </tr>
                 <tr>
                   <td class="text-sm"><a href="runs.html" style="color: var(--color-lake-500); text-decoration: none;">#1246</a></td>

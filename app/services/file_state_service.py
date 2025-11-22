@@ -82,9 +82,22 @@ class FileStateService:
         """Mark file as successfully processed"""
         self.repo.mark_success(file_record, records_ingested, bytes_read)
 
-    def mark_file_failed(self, file_record: ProcessedFile, error: Exception):
+    def mark_file_failed(
+        self,
+        file_record: ProcessedFile,
+        error: Exception,
+        message: Optional[str] = None,
+        error_type: Optional[str] = None,
+        internal_error: Optional[str] = None
+    ):
         """Mark file as failed with error details"""
-        self.repo.mark_failed(file_record, error)
+        self.repo.mark_failed(
+            file_record,
+            error,
+            message=message,
+            error_type=error_type,
+            internal_error=internal_error
+        )
 
     def mark_file_skipped(self, file_record: ProcessedFile, reason: str):
         """Mark file as skipped (e.g., too large, schema mismatch)"""

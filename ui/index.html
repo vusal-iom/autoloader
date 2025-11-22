@@ -112,7 +112,10 @@
             <td>
               <div class="flex flex-col gap-1">
                 <a href="detail.html" style="color: var(--color-lake-500); text-decoration: none; font-weight: 500;">AWS Marketing Data</a>
-                <span class="text-xs text-secondary">marketing_events → marketing.events</span>
+                <div class="flex items-center gap-2">
+                  <span class="text-xs text-secondary">marketing_events → marketing.events</span>
+                  <span class="tag tag-warning">3 failing files</span>
+                </div>
               </div>
             </td>
             <td>
@@ -121,7 +124,7 @@
                 <span>AWS S3</span>
               </div>
             </td>
-            <td><span class="tag tag-active">Active</span></td>
+            <td><span class="tag tag-warning">Partial</span></td>
             <td class="text-sm">Hourly</td>
             <td class="text-sm text-secondary">2 min ago</td>
             <td class="text-sm text-secondary">in 58 min</td>
@@ -200,7 +203,10 @@
             <td>
               <div class="flex flex-col gap-1">
                 <a href="detail.html" style="color: var(--color-lake-500); text-decoration: none; font-weight: 500;">Snyk Security Scan Results</a>
-                <span class="text-xs text-secondary">snyk_results → security.scans</span>
+                <div class="flex items-center gap-2">
+                  <span class="text-xs text-secondary">snyk_results → security.scans</span>
+                  <span class="tag tag-failed">Top issue: malformed JSON</span>
+                </div>
               </div>
             </td>
             <td>

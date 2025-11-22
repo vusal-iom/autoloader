@@ -5,6 +5,8 @@ Replaces streaming Auto Loader with explicit batch processing.
 """
 
 from typing import List, Dict, Optional
+from dataclasses import dataclass
+from enum import Enum
 from pyspark.sql import DataFrame
 from sqlalchemy.orm import Session
 from app.spark.connect_client import SparkConnectClient
@@ -16,6 +18,30 @@ import logging
 import json
 
 logger = logging.getLogger(__name__)
+
+
+class FileErrorCategory(str, Enum):
+    """Predefined error categories for file processing."""
+    DATA_MALFORMED = "data_malformed"
+    SCHEMA_MISMATCH = "schema_mismatch"
+    AUTH = "auth"
+    CONNECTIVITY = "connectivity"
+    WRITE_FAILURE = "write_failure"
+    UNKNOWN = "unknown"
+
+
+@dataclass
+class FileProcessingError(Exception):
+    """Predictable, user-facing file processing error."""
+    category: FileErrorCategory
+    retryable: bool
+    user_message: str
+    raw_error: str
+    file_path: str
+    stage: str
+
+    def __str__(self):
+        return f"[{self.stage}] [{self.category.value}] {self.user_message}: {self.raw_error}"
 
 
 class BatchFileProcessor:
@@ -53,9 +79,10 @@ class BatchFileProcessor:
             run_id: ID of the current run for tracking
 
         Returns:
-            Metrics dict: {success: N, failed: N, skipped: N}
+        Returns:
+            Metrics dict: {success: N, failed: N, skipped: N, errors: [ {file_path, error_type, retryable, message, internal_error, stage} ]}
         """
-        metrics = {'success': 0, 'failed': 0, 'skipped': 0}
+        metrics = {'success': 0, 'failed': 0, 'skipped': 0, 'errors': []}
 
         logger.info(f"Processing {len(files)} files for ingestion {self.ingestion.id}")
 
@@ -90,10 +117,45 @@ class BatchFileProcessor:
                 metrics['success'] += 1
                 logger.info(f"Successfully processed {file_path}: {result['record_count']} records")
 
-            except Exception as e:
-                # Mark failure
-                self.state.mark_file_failed(file_record, e)
+            except FileProcessingError as e:
+                # Mark failure from predictable error
+                self.state.mark_file_failed(
+                    file_record,
+                    e,
+                    message=e.user_message,
+                    error_type=e.category.value,
+                    internal_error=e.raw_error
+                )
                 metrics['failed'] += 1
+                metrics['errors'].append({
+                    'file_path': file_path,
+                    'error_type': e.category.value,
+                    'retryable': e.retryable,
+                    'message': e.user_message,
+                    'internal_error': e.raw_error,
+                    'stage': e.stage
+                })
+                logger.error(f"Failed to process {file_path}: {e}", exc_info=True)
+
+            except Exception as e:
+                # Unexpected error -> wrap and handle
+                wrapped = self._wrap_error("unknown", file_path, e)
+                self.state.mark_file_failed(
+                    file_record,
+                    wrapped,
+                    message=wrapped.user_message,
+                    error_type=wrapped.category.value,
+                    internal_error=wrapped.raw_error
+                )
+                metrics['failed'] += 1
+                metrics['errors'].append({
+                    'file_path': file_path,
+                    'error_type': wrapped.category.value,
+                    'retryable': wrapped.retryable,
+                    'message': wrapped.user_message,
+                    'internal_error': wrapped.raw_error,
+                    'stage': wrapped.stage
+                })
                 logger.error(f"Failed to process {file_path}: {e}", exc_info=True)
 
         logger.info(f"Batch complete: {metrics}")
@@ -119,7 +181,10 @@ class BatchFileProcessor:
             df = self._read_file_infer_schema(file_path)
 
         # Step 2: Get record count (for metrics)
-        record_count = int(df.count())  # Convert to Python int (from numpy.int64)
+        try:
+            record_count = int(df.count())  # Convert to Python int (from numpy.int64)
+        except Exception as e:
+            raise self._wrap_error("count_records", file_path, e)
 
         if record_count == 0:
             logger.warning(f"File {file_path} is empty, skipping write")
@@ -233,8 +298,11 @@ class BatchFileProcessor:
 
         # For Iceberg, use saveAsTable to create table if it doesn't exist
         # This will create the table on first write and append on subsequent writes
-        writer.saveAsTable(table_identifier)
-        logger.debug(f"Wrote DataFrame to {table_identifier}")
+        try:
+            writer.saveAsTable(table_identifier)
+            logger.debug(f"Wrote DataFrame to {table_identifier}")
+        except Exception as e:
+            raise self._wrap_error("write", file_path, e)
 
     def _table_exists(self, spark, table_identifier: str) -> bool:
         """
@@ -380,3 +448,55 @@ class BatchFileProcessor:
             logger.error(f"Failed to record schema version: {e}", exc_info=True)
             # Don't fail the entire ingestion if version recording fails
             # Just log the error and continue
+
+    def _classify_error(self, error: Exception) -> Dict[str, object]:
+        """
+        Classify exceptions into coarse categories with retry guidance.
+
+        Returns dict with keys: category (FileErrorCategory), retryable, user_message
+        """
+        message = str(error) if error else "Unknown error"
+        lower = message.lower()
+
+        category = FileErrorCategory.UNKNOWN
+        retryable = True
+        user_message = message
+
+        if "malformed" in lower or "bad record" in lower or "parse" in lower:
+            category = FileErrorCategory.DATA_MALFORMED
+            retryable = False
+            user_message = "Malformed data encountered. Fix the source file or switch to PERMISSIVE mode."
+        elif "schema" in lower or "cannot resolve" in lower or "analysisexception" in lower:
+            category = FileErrorCategory.SCHEMA_MISMATCH
+            retryable = False
+            user_message = "Schema mismatch detected. Align schema or enable evolution before retrying."
+        elif "access denied" in lower or "permission" in lower or "unauthorized" in lower or "forbidden" in lower:
+            category = FileErrorCategory.AUTH
+            retryable = False
+            user_message = "Authentication/authorization failed when accessing the source. Check credentials."
+        elif "connection" in lower or "timeout" in lower or "timed out" in lower:
+            category = FileErrorCategory.CONNECTIVITY
+            retryable = True
+            user_message = "Temporary connectivity issue. Safe to retry."
+        elif "write" in lower or "iceberg" in lower:
+            category = FileErrorCategory.WRITE_FAILURE
+            retryable = True
+            user_message = "Failed to write to the destination table. Retry or check destination health."
+
+        return {
+            "category": category,
+            "retryable": retryable,
+            "user_message": user_message
+        }
+
+    def _wrap_error(self, stage: str, file_path: str, error: Exception) -> FileProcessingError:
+        """Wrap arbitrary exceptions into a predictable FileProcessingError."""
+        classification = self._classify_error(error)
+        return FileProcessingError(
+            category=classification["category"],
+            retryable=classification["retryable"],
+            user_message=classification["user_message"],
+            raw_error=str(error),
+            file_path=file_path,
+            stage=stage
+        )

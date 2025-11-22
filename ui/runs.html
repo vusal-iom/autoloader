@@ -134,6 +134,26 @@
       </div>
     </div>
 
+    <!-- Alert Banner for Partial/Failed Runs -->
+    <div class="card" style="border: 1px solid var(--color-reef-200); background: var(--color-reef-50); margin-bottom: 20px;">
+      <div class="flex items-center gap-3" style="align-items: flex-start;">
+        <div style="width: 44px; height: 44px; background: var(--color-reef-500); border-radius: 12px; display: flex; align-items: center; justify-content: center; color: white; font-weight: 700; font-size: 20px;">!</div>
+        <div class="flex flex-col gap-1" style="flex: 1;">
+          <div style="font-weight: 600;">Latest run completed with errors</div>
+          <div class="text-sm text-secondary">3 files failed (malformed JSON, schema mismatch). Good files were ingested. Retry is safe.</div>
+          <div class="flex gap-2" style="margin-top: 8px;">
+            <button class="btn btn-primary btn-small">Retry failed files</button>
+            <button class="btn btn-secondary btn-small" onclick="showRunDetails(1243)">View failed list</button>
+          </div>
+        </div>
+        <div style="text-align: right;">
+          <div class="text-xs text-secondary">Last run</div>
+          <div style="font-weight: 500;">#1247 • Partial</div>
+          <div class="text-xs text-secondary">2m ago</div>
+        </div>
+      </div>
+    </div>
+
     <!-- Metrics Summary -->
     <div class="stats-grid" style="margin-bottom: 32px;">
       <div class="stat-card">
@@ -185,7 +205,7 @@
               <th>Status</th>
               <th>Started</th>
               <th>Duration</th>
-              <th>Files</th>
+              <th>Files (success/failed)</th>
               <th>Records</th>
               <th style="text-align: center;">Actions</th>
             </tr>
@@ -193,13 +213,13 @@
           <tbody>
             <tr onclick="showRunDetails(1247)" style="cursor: pointer;">
               <td class="text-sm"><strong>#1247</strong></td>
-              <td><span class="tag tag-completed">Completed</span></td>
+              <td><span class="tag tag-warning">Partial</span></td>
               <td class="text-sm text-secondary">2 min ago</td>
               <td class="text-sm">2m 34s</td>
-              <td class="text-sm">43</td>
+              <td class="text-sm">40 / <span style="color: var(--color-reef-500);">3</span></td>
               <td class="text-sm">12,456</td>
               <td style="text-align: center;">
-                <button class="btn btn-text btn-small">View Logs</button>
+                <button class="btn btn-text btn-small">Failed files</button>
               </td>
             </tr>
             <tr onclick="showRunDetails(1246)" style="cursor: pointer;">
@@ -240,7 +260,7 @@
               <td><span class="tag tag-failed">Failed</span></td>
               <td class="text-sm text-secondary">4 hours ago</td>
               <td class="text-sm">0m 45s</td>
-              <td class="text-sm">-</td>
+              <td class="text-sm">38 / <span style="color: var(--color-reef-500);">5</span></td>
               <td class="text-sm">-</td>
               <td style="text-align: center;">
                 <button class="btn btn-text btn-small" style="color: var(--color-success);">Retry</button>
@@ -288,14 +308,15 @@
         <h4 style="margin-bottom: 16px;">Run #1247 Details</h4>
 
         <!-- Status Banner -->
-        <div style="padding: 16px; background: var(--color-racing-50); border-radius: 6px; border: 1px solid var(--color-racing-300); margin-bottom: 20px;">
+        <div style="padding: 16px; background: var(--color-apricot-50); border-radius: 6px; border: 1px solid var(--color-apricot-200); margin-bottom: 20px;">
           <div class="flex items-center gap-3">
-            <div style="width: 40px; height: 40px; background: var(--color-racing-500); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-size: 20px;">
-              ✓
+            <div style="width: 40px; height: 40px; background: var(--color-apricot-500); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-size: 20px; font-weight: 700;">
+              !
             </div>
             <div>
-              <div style="font-weight: 500;">Completed Successfully</div>
+              <div style="font-weight: 500;">Completed with errors (Partial)</div>
               <div class="text-sm text-secondary">Nov 9, 2025 at 11:02 AM UTC</div>
+              <div class="text-xs text-secondary">3 files failed: malformed JSON, schema mismatch</div>
             </div>
           </div>
         </div>
@@ -308,7 +329,7 @@
           </div>
           <div>
             <div class="text-xs text-secondary">Files Processed</div>
-            <div style="font-weight: 500; margin-top: 4px;">43</div>
+            <div style="font-weight: 500; margin-top: 4px;">40 / <span style="color: var(--color-reef-500);">3 failed</span></div>
           </div>
           <div>
             <div class="text-xs text-secondary">Records Added</div>
@@ -317,6 +338,52 @@
           <div>
             <div class="text-xs text-secondary">Data Size</div>
             <div style="font-weight: 500; margin-top: 4px;">284.5 MB</div>
+          </div>
+        </div>
+
+        <!-- Failed Files Panel -->
+        <div class="card" style="background: var(--color-reef-50); border: 1px solid var(--color-reef-200); padding: 12px; margin-bottom: 16px;">
+          <div class="flex justify-between items-center" style="margin-bottom: 8px;">
+            <div style="font-weight: 600;">Failed Files (3)</div>
+            <div class="flex gap-2">
+              <button class="btn btn-secondary btn-small">Retry failed</button>
+              <button class="btn btn-text btn-small">View logs</button>
+            </div>
+          </div>
+          <div class="flex flex-col gap-2">
+            <div style="padding: 10px; border: 1px solid var(--color-border-secondary); border-radius: 6px; background: white;">
+              <div class="flex justify-between">
+                <div class="text-sm" style="font-weight: 500;">s3://marketing/data/events/2025/11/09/part-0043.json</div>
+                <span class="tag tag-failed">Malformed</span>
+              </div>
+              <div class="text-xs text-secondary" style="margin-top: 4px;">JSON parse failed at line 1 (mode=FAILFAST). Retry after fixing upstream or switch to PERMISSIVE.</div>
+              <div class="flex gap-2" style="margin-top: 6px;">
+                <span class="tag tag-warning">Retryable</span>
+                <button class="btn btn-text btn-small" style="color: var(--color-success);">Retry file</button>
+              </div>
+            </div>
+            <div style="padding: 10px; border: 1px solid var(--color-border-secondary); border-radius: 6px; background: white;">
+              <div class="flex justify-between">
+                <div class="text-sm" style="font-weight: 500;">s3://marketing/data/events/2025/11/09/part-0042.json</div>
+                <span class="tag tag-failed">Schema mismatch</span>
+              </div>
+              <div class="text-xs text-secondary" style="margin-top: 4px;">Missing required column “email”. Align schema or allow evolution.</div>
+              <div class="flex gap-2" style="margin-top: 6px;">
+                <span class="tag tag-warning">Manual fix</span>
+                <button class="btn btn-text btn-small">Download file</button>
+              </div>
+            </div>
+            <div style="padding: 10px; border: 1px solid var(--color-border-secondary); border-radius: 6px; background: white;">
+              <div class="flex justify-between">
+                <div class="text-sm" style="font-weight: 500;">s3://marketing/data/events/2025/11/09/part-0041.json</div>
+                <span class="tag tag-failed">Access</span>
+              </div>
+              <div class="text-xs text-secondary" style="margin-top: 4px;">Temporary S3 auth failure. Safe to retry.</div>
+              <div class="flex gap-2" style="margin-top: 6px;">
+                <span class="tag tag-success">Retryable</span>
+                <button class="btn btn-text btn-small" style="color: var(--color-success);">Retry file</button>
+              </div>
+            </div>
           </div>
         </div>
 

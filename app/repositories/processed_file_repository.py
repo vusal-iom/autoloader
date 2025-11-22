@@ -227,7 +227,14 @@ class ProcessedFileRepository:
         self.db.commit()
         logger.info(f"Marked file SUCCESS: {file_record.file_path} ({records_ingested} records)")
 
-    def mark_failed(self, file_record: ProcessedFile, error: Exception):
+    def mark_failed(
+        self,
+        file_record: ProcessedFile,
+        error: Exception,
+        message: Optional[str] = None,
+        error_type: Optional[str] = None,
+        internal_error: Optional[str] = None
+    ):
         """
         Mark file as failed with error details.
 
@@ -236,8 +243,14 @@ class ProcessedFileRepository:
             error: Exception that caused failure
         """
         file_record.status = ProcessedFileStatus.FAILED.value
-        file_record.error_message = str(error)
-        file_record.error_type = type(error).__name__
+        user_facing = message or str(error)
+        debug_part = internal_error or str(error)
+        combined = user_facing
+        if debug_part and debug_part not in user_facing:
+            combined = f"{user_facing} | internal: {debug_part}"
+
+        file_record.error_message = self._truncate_error_message(combined)
+        file_record.error_type = error_type or type(error).__name__
         now = datetime.now(timezone.utc)
         file_record.processed_at = now
 
@@ -247,6 +260,12 @@ class ProcessedFileRepository:
 
         self.db.commit()
         logger.error(f"Marked file FAILED: {file_record.file_path} - {error}")
+
+    def _truncate_error_message(self, message: str, max_length: int = 2048) -> str:
+        """Limit stored error message length to protect DB."""
+        if message and len(message) > max_length:
+            return message[: max_length - 3] + "..."
+        return message
 
     def mark_skipped(self, file_record: ProcessedFile, reason: str):
         """
