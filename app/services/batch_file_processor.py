@@ -79,7 +79,7 @@ class BatchFileProcessor:
             try:
                 # Process single file
                 logger.info(f"Processing file: {file_path}")
-                result = self._process_single_file(file_path, file_info)
+                result = self._process_single_file(file_path)
 
                 # Mark success
                 self.state.mark_file_success(
@@ -99,7 +99,7 @@ class BatchFileProcessor:
         logger.info(f"Batch complete: {metrics}")
         return metrics
 
-    def _process_single_file(self, file_path: str, file_info: Dict) -> Dict:
+    def _process_single_file(self, file_path: str) -> Dict:
         """
         Process a single file with Spark batch API.
 

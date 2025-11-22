@@ -12,6 +12,7 @@ from app.services.batch_file_processor import BatchFileProcessor
 from app.services.file_state_service import FileStateService
 from app.repositories.ingestion_repository import IngestionRepository
 from app.models.domain import Ingestion, IngestionStatus
+from tests.conftest import TestTableMetadata
 from tests.helpers.logger import TestLogger
 
 @pytest.mark.integration
@@ -49,13 +50,8 @@ class TestBatchFileProcessor:
         test_db.refresh(ingestion)
         return ingestion
 
-    def _configure_ingestion_table(self, ingestion, test_db, table_id):
-        """Helper to update ingestion destination table."""
-        ingestion.destination_table = table_id.split(".")[-1]
-        test_db.commit()
-
     def test_process_single_file_success_infer_schema(
-        self, test_db, spark_client, spark_session, upload_file, ingestion, temporary_table
+        self, test_db, spark_client, spark_session, upload_file, ingestion, random_table_name_generator
     ):
         """Test processing a single file with schema inference."""
         logger = TestLogger()
@@ -74,10 +70,13 @@ class TestBatchFileProcessor:
         s3_path = upload_file(key=f"data/test_infer_{uuid.uuid4()}.json", content=file_data)
         logger.step(f"Uploaded file to {s3_path}")
 
-        # Configure ingestion with temporary table
-        table_id = temporary_table(prefix="batch_infer", logger=logger)
-        self._configure_ingestion_table(ingestion, test_db, table_id)
-        logger.step(f"Configured ingestion for table {table_id}")
+        # generate random table name
+        table: TestTableMetadata = random_table_name_generator(prefix="batch_infer", logger=logger)
+
+        # Configure ingestion with the table name
+        ingestion.destination_table = table.table_name
+        test_db.commit()
+        logger.step(f"Configured ingestion for table {table}")
 
         # ----------------------------------------------------------------------
         # 2. Action
@@ -87,8 +86,7 @@ class TestBatchFileProcessor:
         state_service = FileStateService(test_db)
         processor = BatchFileProcessor(spark_client, state_service, ingestion, test_db)
         
-        file_info = {"path": s3_path, "size": 100, "last_modified": 1234567890}
-        result = processor._process_single_file(s3_path, file_info)
+        result = processor._process_single_file(s3_path)
         logger.step("Processed file")
 
         # ----------------------------------------------------------------------
@@ -96,11 +94,10 @@ class TestBatchFileProcessor:
         # ----------------------------------------------------------------------
         logger.phase("Verify")
         
-        # Verify return value
-        assert result['record_count'] == 2
+        assert result == {'record_count': 2}
         
         # Verify table content
-        df_actual = spark_session.table(table_id).orderBy("id")
+        df_actual = spark_session.table(table.full_name).orderBy("id")
         
         expected_schema = StructType([
             StructField("id", LongType(), True),
@@ -119,7 +116,7 @@ class TestBatchFileProcessor:
         logger.success("Table content matches expected data")
 
     def test_process_single_file_success_predefined_schema(
-        self, test_db, spark_client, spark_session, upload_file, ingestion, temporary_table
+        self, test_db, spark_client, spark_session, upload_file, ingestion, random_table_name_generator
     ):
         """Test processing a single file with predefined schema."""
         logger = TestLogger()
@@ -140,9 +137,12 @@ class TestBatchFileProcessor:
         }
         ingestion.schema_json = json.dumps(schema)
         
-        # Configure ingestion with temporary table
-        table_id = temporary_table(prefix="batch_schema", logger=logger)
-        self._configure_ingestion_table(ingestion, test_db, table_id)
+        # generate random table name
+        table: TestTableMetadata = random_table_name_generator(prefix="batch_schema", logger=logger)
+        
+        # Configure ingestion with the table name
+        ingestion.destination_table = table.table_name
+        test_db.commit()
 
         # Upload file with extra field 'score'
         file_data = [
@@ -160,8 +160,7 @@ class TestBatchFileProcessor:
         state_service = FileStateService(test_db)
         processor = BatchFileProcessor(spark_client, state_service, ingestion, test_db)
         
-        file_info = {"path": s3_path, "size": 100}
-        result = processor._process_single_file(s3_path, file_info)
+        result = processor._process_single_file(s3_path)
         logger.step("Processed file")
 
         # ----------------------------------------------------------------------
@@ -169,9 +168,9 @@ class TestBatchFileProcessor:
         # ----------------------------------------------------------------------
         logger.phase("Verify")
         
-        assert result['record_count'] == 2
+        assert result == {'record_count': 2}
         
-        df_actual = spark_session.table(table_id).orderBy("id")
+        df_actual = spark_session.table(table.full_name).orderBy("id")
         
         # Expected schema should NOT have 'score'
         expected_schema = StructType([
@@ -194,7 +193,7 @@ class TestBatchFileProcessor:
         logger.success("Table content adheres to strict schema (extra column ignored)")
 
     def test_process_single_file_empty_file(
-        self, test_db, spark_client, spark_session, upload_file, ingestion, temporary_table
+        self, test_db, spark_client, spark_session, upload_file, ingestion, random_table_name_generator
     ):
         """Test processing an empty file."""
         logger = TestLogger()
@@ -208,9 +207,12 @@ class TestBatchFileProcessor:
         # Upload empty file
         s3_path = upload_file(key=f"data/test_empty_{uuid.uuid4()}.json", content=[])
         
-        # Configure ingestion
-        table_id = temporary_table(prefix="batch_empty", logger=logger)
-        self._configure_ingestion_table(ingestion, test_db, table_id)
+        # generate random table name
+        table: TestTableMetadata = random_table_name_generator(prefix="batch_empty", logger=logger)
+        
+        # Configure ingestion with the table name
+        ingestion.destination_table = table.table_name
+        test_db.commit()
 
         # ----------------------------------------------------------------------
         # 2. Action
@@ -220,8 +222,7 @@ class TestBatchFileProcessor:
         state_service = FileStateService(test_db)
         processor = BatchFileProcessor(spark_client, state_service, ingestion, test_db)
         
-        file_info = {"path": s3_path, "size": 10}
-        result = processor._process_single_file(s3_path, file_info)
+        result = processor._process_single_file(s3_path)
         logger.step("Processed file")
 
         # ----------------------------------------------------------------------
@@ -229,10 +230,10 @@ class TestBatchFileProcessor:
         # ----------------------------------------------------------------------
         logger.phase("Verify")
         
-        assert result['record_count'] == 0
+        assert result == {'record_count': 0}
         
         # Table should not exist because no data was written
-        table_exists = spark_session.catalog.tableExists(table_id)
+        table_exists = spark_session.catalog.tableExists(table.full_name)
         assert not table_exists
         logger.success("Table was not created")
 
@@ -270,14 +271,12 @@ class TestBatchFileProcessor:
         state_service = FileStateService(test_db)
         processor = BatchFileProcessor(spark_client, state_service, ingestion, test_db)
         
-        file_info = {"path": s3_path, "size": 100}
-        
         with pytest.raises(Exception):
-            processor._process_single_file(s3_path, file_info)
+            processor._process_single_file(s3_path)
         logger.success("Exception raised as expected")
 
     def test_process_single_file_schema_evolution(
-        self, test_db, spark_client, spark_session, upload_file, ingestion, temporary_table
+        self, test_db, spark_client, spark_session, upload_file, ingestion, random_table_name_generator
     ):
         """Test schema evolution across two files."""
         logger = TestLogger()
@@ -292,14 +291,17 @@ class TestBatchFileProcessor:
         file1_data = [{"id": 1, "name": "Alice"}]
         s3_path1 = upload_file(key=f"data/test_evolve_1_{uuid.uuid4()}.json", content=file1_data)
         
-        # Configure ingestion
-        table_id = temporary_table(prefix="batch_evolve", logger=logger)
-        self._configure_ingestion_table(ingestion, test_db, table_id)
+        # generate random table name
+        table: TestTableMetadata = random_table_name_generator(prefix="batch_evolve", logger=logger)
+        
+        # Configure ingestion with the table name
+        ingestion.destination_table = table.table_name
+        test_db.commit()
         
         # Process File 1
         state_service = FileStateService(test_db)
         processor = BatchFileProcessor(spark_client, state_service, ingestion, test_db)
-        processor._process_single_file(s3_path1, {"path": s3_path1, "size": 100})
+        processor._process_single_file(s3_path1)
         logger.step("Processed file 1")
         
         # ----------------------------------------------------------------------
@@ -312,7 +314,7 @@ class TestBatchFileProcessor:
         s3_path2 = upload_file(key=f"data/test_evolve_2_{uuid.uuid4()}.json", content=file2_data)
         
         # Process File 2
-        processor._process_single_file(s3_path2, {"path": s3_path2, "size": 100})
+        processor._process_single_file(s3_path2)
         logger.step("Processed file 2")
         
         # ----------------------------------------------------------------------
@@ -320,7 +322,7 @@ class TestBatchFileProcessor:
         # ----------------------------------------------------------------------
         logger.phase("Verify")
         
-        df_actual = spark_session.table(table_id).orderBy("id")
+        df_actual = spark_session.table(table.full_name).orderBy("id")
         
         expected_schema = StructType([
             StructField("id", LongType(), True),
