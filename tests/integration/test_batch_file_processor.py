@@ -270,7 +270,8 @@ class TestBatchFileProcessor:
         
         state_service = FileStateService(test_db)
         processor = BatchFileProcessor(spark_client, state_service, ingestion, test_db)
-        
+
+        # TODO: Need to think how to better handle these exceptions and how we can create visibility to users!
         with pytest.raises(Exception):
             processor._process_single_file(s3_path)
         logger.success("Exception raised as expected")
