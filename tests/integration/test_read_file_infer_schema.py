@@ -128,14 +128,14 @@ class TestReadFileInferSchema:
 
         logger.success("Malformed file raised FileProcessingError with correct category")
 
-    def test_read_infer_schema_missing_path(
+    def test_read_infer_schema_missing_bucket(
         self, test_db, spark_client, ingestion
     ):
         """
-        Missing bucket/key should be categorized as path_not_found.
+        Missing bucket should be categorized as bucket_not_found.
         """
         logger = TestLogger()
-        logger.section("Integration Test: _read_file_infer_schema missing path")
+        logger.section("Integration Test: _read_file_infer_schema missing bucket")
 
         missing_path = f"s3a://nonexistent-bucket-{uuid.uuid4()}/missing/file.json"
         processor = BatchFileProcessor(spark_client, FileStateService(test_db), ingestion, test_db)
@@ -148,16 +148,52 @@ class TestReadFileInferSchema:
                 raise processor._wrap_error(missing_path, e)
 
         err: FileProcessingError = excinfo.value
-
-        assert (err.category, err.retryable, err.file_path) == (
-            FileErrorCategory.PATH_NOT_FOUND, False, missing_path,
+        assert (err.category, err.retryable) == (
+            FileErrorCategory.BUCKET_NOT_FOUND,
+            False,
         )
-        assert err.user_message == "Source path not found. Verify bucket/key/prefix and retry."
+        assert err.user_message == "Source bucket not found. Verify bucket name and permissions."
 
         assert "(org.apache.hadoop.fs.s3a.UnknownStoreException)" in err.raw_error
         assert "The specified bucket does not exist" in err.raw_error
 
-        logger.success("Missing path categorized as PATH_NOT_FOUND")
+        logger.success("Missing bucket categorized as BUCKET_NOT_FOUND")
+
+    def test_read_infer_schema_missing_file(
+        self, test_db, spark_client, upload_file, ingestion, lakehouse_bucket
+    ):
+        """
+        Missing file (valid bucket) should be categorized as path_not_found.
+        """
+        logger = TestLogger()
+        logger.section("Integration Test: _read_file_infer_schema missing file")
+
+        # Create a valid bucket by uploading a dummy file (MinIO creates bucket on upload)
+        upload_file(key=f"setup/dummy_{uuid.uuid4()}.txt", content="setup")
+        
+        # Now try to read a non-existent file in that bucket
+        missing_file_path = f"s3a://{lakehouse_bucket}/nonexistent/file.json"
+        
+        processor = BatchFileProcessor(spark_client, FileStateService(test_db), ingestion, test_db)
+
+        with pytest.raises(FileProcessingError) as excinfo:
+            df = processor._read_file_infer_schema(missing_file_path)
+            try:
+                df.limit(1).collect()
+            except Exception as e:
+                raise processor._wrap_error(missing_file_path, e)
+
+        err: FileProcessingError = excinfo.value
+        assert (err.category, err.retryable) == (
+            FileErrorCategory.PATH_NOT_FOUND,
+            False,
+        )
+        assert err.user_message == "Source path not found. Verify bucket/key/prefix and retry."
+        
+        # Spark/Hadoop error for missing file usually contains "does not exist" or "FileNotFoundException"
+        assert "does not exist" in err.raw_error or "FileNotFoundException" in err.raw_error
+
+        logger.success("Missing file categorized as PATH_NOT_FOUND")
 
     def test_read_infer_schema_invalid_format_option(
         self, test_db, spark_client, upload_file, ingestion

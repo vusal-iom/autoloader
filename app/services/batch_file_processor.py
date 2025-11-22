@@ -28,6 +28,7 @@ class FileErrorCategory(str, Enum):
     CONNECTIVITY = "connectivity"
     WRITE_FAILURE = "write_failure"
     PATH_NOT_FOUND = "path_not_found"
+    BUCKET_NOT_FOUND = "bucket_not_found"
     FORMAT_OPTIONS_INVALID = "format_options_invalid"
     SCHEMA_INFERENCE_FAILURE = "schema_inference_failure"
     UNKNOWN = "unknown"
@@ -471,10 +472,12 @@ class BatchFileProcessor:
             category = FileErrorCategory.SCHEMA_MISMATCH
             retryable = False
             user_message = "Schema mismatch detected. Align schema or enable evolution before retrying."
+        elif "no such bucket" in lower or "nosuchbucket" in lower:
+            category = FileErrorCategory.BUCKET_NOT_FOUND
+            retryable = False
+            user_message = "Source bucket not found. Verify bucket name and permissions."
         elif (
-            "no such bucket" in lower
-            or "nosuchbucket" in lower
-            or "nosuchkey" in lower
+            "nosuchkey" in lower
             or "not found" in lower
             or "does not exist" in lower
         ):
