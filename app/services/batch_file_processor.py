@@ -41,10 +41,10 @@ class FileProcessingError(Exception):
     user_message: str
     raw_error: str
     file_path: str
-    stage: str
+    file_path: str
 
     def __str__(self):
-        return f"[{self.stage}] [{self.category.value}] {self.user_message}: {self.raw_error}"
+        return f"[{self.category.value}] {self.user_message}: {self.raw_error}"
 
 
 class BatchFileProcessor:
@@ -135,14 +135,13 @@ class BatchFileProcessor:
                     'error_type': e.category.value,
                     'retryable': e.retryable,
                     'message': e.user_message,
-                    'internal_error': e.raw_error,
-                    'stage': e.stage
+                    'internal_error': e.raw_error
                 })
                 logger.error(f"Failed to process {file_path}: {e}", exc_info=True)
 
             except Exception as e:
                 # Unexpected error -> wrap and handle
-                wrapped = self._wrap_error("unknown", file_path, e)
+                wrapped = self._wrap_error(file_path, e)
                 self.state.mark_file_failed(
                     file_record,
                     wrapped,
@@ -156,8 +155,7 @@ class BatchFileProcessor:
                     'error_type': wrapped.category.value,
                     'retryable': wrapped.retryable,
                     'message': wrapped.user_message,
-                    'internal_error': wrapped.raw_error,
-                    'stage': wrapped.stage
+                    'internal_error': wrapped.raw_error
                 })
                 logger.error(f"Failed to process {file_path}: {e}", exc_info=True)
 
@@ -187,7 +185,7 @@ class BatchFileProcessor:
         try:
             record_count = int(df.count())  # Convert to Python int (from numpy.int64)
         except Exception as e:
-            raise self._wrap_error("count_records", file_path, e)
+            raise self._wrap_error(file_path, e)
 
         if record_count == 0:
             logger.warning(f"File {file_path} is empty, skipping write")
@@ -305,7 +303,7 @@ class BatchFileProcessor:
             writer.saveAsTable(table_identifier)
             logger.debug(f"Wrote DataFrame to {table_identifier}")
         except Exception as e:
-            raise self._wrap_error("write", file_path, e)
+            raise self._wrap_error(file_path, e)
 
     def _table_exists(self, spark, table_identifier: str) -> bool:
         """
@@ -517,7 +515,7 @@ class BatchFileProcessor:
             "user_message": user_message
         }
 
-    def _wrap_error(self, stage: str, file_path: str, error: Exception) -> FileProcessingError:
+    def _wrap_error(self, file_path: str, error: Exception) -> FileProcessingError:
         """Wrap arbitrary exceptions into a predictable FileProcessingError."""
         classification = self._classify_error(error)
         return FileProcessingError(
@@ -525,6 +523,5 @@ class BatchFileProcessor:
             retryable=classification["retryable"],
             user_message=classification["user_message"],
             raw_error=str(error),
-            file_path=file_path,
-            stage=stage
+            file_path=file_path
         )

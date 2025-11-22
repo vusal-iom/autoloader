@@ -116,17 +116,17 @@ class TestReadFileInferSchema:
                 df.limit(1).collect()
             except Exception as e:
                 # Wrap the lazy Spark error into a predictable domain error
-                raise processor._wrap_error("read_infer_schema", s3_path, e)
+                raise processor._wrap_error(s3_path, e)
 
         err: FileProcessingError  = excinfo.value
 
-        assert (err.category, err.retryable, err.stage, err.file_path) == (
-            FileErrorCategory.DATA_MALFORMED, False, "read_infer_schema", s3_path,
+        assert (err.category, err.retryable, err.file_path) == (
+            FileErrorCategory.DATA_MALFORMED, False, s3_path,
         )
         assert err.user_message == "Malformed data encountered. Fix the source file or switch to PERMISSIVE mode."
         assert "(org.apache.spark.SparkException) Job aborted due to stage failure" in err.raw_error
 
-        logger.success("Malformed file raised FileProcessingError with correct category and stage")
+        logger.success("Malformed file raised FileProcessingError with correct category")
 
     def test_read_infer_schema_missing_path(
         self, test_db, spark_client, ingestion
@@ -145,13 +145,12 @@ class TestReadFileInferSchema:
             try:
                 df.limit(1).collect()
             except Exception as e:
-                raise processor._wrap_error("read_infer_schema", missing_path, e)
+                raise processor._wrap_error(missing_path, e)
 
         err: FileProcessingError = excinfo.value
-        assert (err.category, err.retryable, err.stage) == (
-            FileErrorCategory.PATH_NOT_FOUND,
-            False,
-            "read_infer_schema",
+
+        assert (err.category, err.retryable, err.file_path) == (
+            FileErrorCategory.PATH_NOT_FOUND, False, missing_path,
         )
         assert err.user_message == "Source path not found. Verify bucket/key/prefix and retry."
 
@@ -183,13 +182,12 @@ class TestReadFileInferSchema:
             try:
                 df.limit(1).collect()
             except Exception as e:
-                raise processor._wrap_error("read_infer_schema", s3_path, e)
+                raise processor._wrap_error(s3_path, e)
 
         err: FileProcessingError = excinfo.value
-        assert (err.category, err.retryable, err.stage) == (
-            FileErrorCategory.FORMAT_OPTIONS_INVALID,
-            False,
-            "read_infer_schema",
+
+        assert (err.category, err.retryable, err.file_path) == (
+            FileErrorCategory.FORMAT_OPTIONS_INVALID, False, s3_path,
         )
 
         assert err.user_message == "Invalid format options. Check mode/options for the reader."
