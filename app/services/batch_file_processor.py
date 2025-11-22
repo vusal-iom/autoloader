@@ -27,6 +27,9 @@ class FileErrorCategory(str, Enum):
     AUTH = "auth"
     CONNECTIVITY = "connectivity"
     WRITE_FAILURE = "write_failure"
+    PATH_NOT_FOUND = "path_not_found"
+    FORMAT_OPTIONS_INVALID = "format_options_invalid"
+    SCHEMA_INFERENCE_FAILURE = "schema_inference_failure"
     UNKNOWN = "unknown"
 
 
@@ -470,6 +473,31 @@ class BatchFileProcessor:
             category = FileErrorCategory.SCHEMA_MISMATCH
             retryable = False
             user_message = "Schema mismatch detected. Align schema or enable evolution before retrying."
+        elif (
+            "no such bucket" in lower
+            or "nosuchbucket" in lower
+            or "nosuchkey" in lower
+            or "not found" in lower
+            or "does not exist" in lower
+        ):
+            category = FileErrorCategory.PATH_NOT_FOUND
+            retryable = False
+            user_message = "Source path not found. Verify bucket/key/prefix and retry."
+        elif (
+            "unrecognized option" in lower
+            or "unsupported option" in lower
+            or "invalid" in lower
+            or "not a valid" in lower
+            or "for input string" in lower
+            or "numberformatexception" in lower
+        ):
+            category = FileErrorCategory.FORMAT_OPTIONS_INVALID
+            retryable = False
+            user_message = "Invalid format options. Check mode/options for the reader."
+        elif "inference" in lower or "unable to infer" in lower or "requires that the schema" in lower:
+            category = FileErrorCategory.SCHEMA_INFERENCE_FAILURE
+            retryable = False
+            user_message = "Schema inference failed. Provide an explicit schema or fix the input."
         elif "access denied" in lower or "permission" in lower or "unauthorized" in lower or "forbidden" in lower:
             category = FileErrorCategory.AUTH
             retryable = False

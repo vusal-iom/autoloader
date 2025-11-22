@@ -130,3 +130,71 @@ class TestReadFileInferSchema:
         assert "(org.apache.spark.SparkException) Job aborted due to stage failure" in err.raw_error
 
         logger.success("Malformed file raised FileProcessingError with correct category and stage")
+
+    def test_read_infer_schema_missing_path(
+        self, test_db, spark_client, ingestion
+    ):
+        """
+        Missing bucket/key should be categorized as path_not_found.
+        """
+        logger = TestLogger()
+        logger.section("Integration Test: _read_file_infer_schema missing path")
+
+        missing_path = f"s3a://nonexistent-bucket-{uuid.uuid4()}/missing/file.json"
+        processor = BatchFileProcessor(spark_client, FileStateService(test_db), ingestion, test_db)
+
+        with pytest.raises(FileProcessingError) as excinfo:
+            df = processor._read_file_infer_schema(missing_path)
+            try:
+                df.limit(1).collect()
+            except Exception as e:
+                raise processor._wrap_error("read_infer_schema", missing_path, e)
+
+        err: FileProcessingError = excinfo.value
+        assert (err.category, err.retryable, err.stage) == (
+            FileErrorCategory.PATH_NOT_FOUND,
+            False,
+            "read_infer_schema",
+        )
+        assert err.user_message == "Source path not found. Verify bucket/key/prefix and retry."
+
+        assert "(org.apache.hadoop.fs.s3a.UnknownStoreException)" in err.raw_error
+        assert "The specified bucket does not exist" in err.raw_error
+
+        logger.success("Missing path categorized as PATH_NOT_FOUND")
+
+    def test_read_infer_schema_invalid_format_option(
+        self, test_db, spark_client, upload_file, ingestion
+    ):
+        """
+        Invalid format option should be categorized as format_options_invalid.
+        """
+        logger = TestLogger()
+        logger.section("Integration Test: _read_file_infer_schema invalid format option")
+
+        ingestion.format_options = json.dumps({"samplingRatio": "not-a-number"})
+        test_db.commit()
+
+        s3_path = upload_file(
+            key=f"data/read_infer_invalid_mode_{uuid.uuid4()}.json",
+            content=[{"id": 1}]
+        )
+        processor = BatchFileProcessor(spark_client, FileStateService(test_db), ingestion, test_db)
+
+        with pytest.raises(FileProcessingError) as excinfo:
+            df = processor._read_file_infer_schema(s3_path)
+            try:
+                df.limit(1).collect()
+            except Exception as e:
+                raise processor._wrap_error("read_infer_schema", s3_path, e)
+
+        err: FileProcessingError = excinfo.value
+        assert (err.category, err.retryable, err.stage) == (
+            FileErrorCategory.FORMAT_OPTIONS_INVALID,
+            False,
+            "read_infer_schema",
+        )
+
+        assert err.user_message == "Invalid format options. Check mode/options for the reader."
+        assert err.raw_error == """For input string: \"not-a-number\""""
+        logger.success("Invalid format option categorized as FORMAT_OPTIONS_INVALID")
