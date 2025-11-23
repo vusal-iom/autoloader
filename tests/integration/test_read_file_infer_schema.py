@@ -1,5 +1,5 @@
 """
-Integration tests for BatchFileProcessor._read_file_infer_schema.
+Integration tests for SparkFileReader.read_file_infer_schema.
 """
 import json
 import uuid
@@ -7,9 +7,8 @@ import pytest
 from pyspark.sql.types import StructType, StructField, LongType, StringType
 from chispa import assert_df_equality
 
-from app.services.batch.processor import BatchFileProcessor
+from app.services.batch.reader import SparkFileReader
 from app.services.batch.errors import FileProcessingError, FileErrorCategory
-from app.services.file_state_service import FileStateService
 from app.repositories.ingestion_repository import IngestionRepository
 from app.models.domain import Ingestion, IngestionStatus
 from tests.helpers.logger import TestLogger
@@ -17,7 +16,7 @@ from tests.helpers.logger import TestLogger
 
 @pytest.mark.integration
 class TestReadFileInferSchema:
-    """Tests for _read_file_infer_schema error handling and success paths."""
+    """Tests for SparkFileReader.read_file_infer_schema error handling and success paths."""
 
     @pytest.fixture
     def ingestion(self, test_db):
@@ -54,7 +53,7 @@ class TestReadFileInferSchema:
     ):
         """Reads a valid JSON file and infers schema/data correctly."""
         logger = TestLogger()
-        logger.section("Integration Test: _read_file_infer_schema success")
+        logger.section("Integration Test: read_file_infer_schema success")
 
         # Upload valid file
         file_data = [
@@ -65,9 +64,8 @@ class TestReadFileInferSchema:
         logger.step(f"Uploaded file to {s3_path}")
 
         # Invoke
-        processor = BatchFileProcessor(spark_client, FileStateService(test_db), ingestion, test_db)
-        # Use reader directly to verify DataFrame content
-        df = processor.reader.read_file_infer_schema(s3_path, ingestion)
+        reader = SparkFileReader(spark_client)
+        df = reader.read_file_infer_schema(s3_path, ingestion)
 
         # Verify schema and rows
         expected_schema = StructType([
@@ -94,7 +92,7 @@ class TestReadFileInferSchema:
         when FAILFAST is configured.
         """
         logger = TestLogger()
-        logger.section("Integration Test: _read_file_infer_schema malformed file FAILFAST")
+        logger.section("Integration Test: read_file_infer_schema malformed file FAILFAST")
 
         # Configure ingestion to fail fast on malformed records
         ingestion.format_options = json.dumps({"mode": "FAILFAST"})
@@ -105,11 +103,10 @@ class TestReadFileInferSchema:
         s3_path = upload_file(key=f"data/read_infer_bad_{uuid.uuid4()}.json", content=content)
         logger.step(f"Uploaded malformed file to {s3_path}")
 
-        processor = BatchFileProcessor(spark_client, FileStateService(test_db), ingestion, test_db)
+        reader = SparkFileReader(spark_client)
 
-        # Use _process_single_file to verify error wrapping
         with pytest.raises(FileProcessingError) as excinfo:
-            processor._process_single_file(s3_path)
+            reader.read_file_infer_schema(s3_path, ingestion)
 
         err: FileProcessingError  = excinfo.value
 
@@ -128,13 +125,13 @@ class TestReadFileInferSchema:
         Missing bucket should be categorized as bucket_not_found.
         """
         logger = TestLogger()
-        logger.section("Integration Test: _read_file_infer_schema missing bucket")
+        logger.section("Integration Test: read_file_infer_schema missing bucket")
 
         missing_path = f"s3a://nonexistent-bucket-{uuid.uuid4()}/missing/file.json"
-        processor = BatchFileProcessor(spark_client, FileStateService(test_db), ingestion, test_db)
+        reader = SparkFileReader(spark_client)
 
         with pytest.raises(FileProcessingError) as excinfo:
-            processor._process_single_file(missing_path)
+            reader.read_file_infer_schema(missing_path, ingestion)
 
         err: FileProcessingError = excinfo.value
         assert (err.category, err.retryable) == (
@@ -155,7 +152,7 @@ class TestReadFileInferSchema:
         Missing file (valid bucket) should be categorized as path_not_found.
         """
         logger = TestLogger()
-        logger.section("Integration Test: _read_file_infer_schema missing file")
+        logger.section("Integration Test: read_file_infer_schema missing file")
 
         # Create a valid bucket by uploading a dummy file (MinIO creates bucket on upload)
         upload_file(key=f"setup/dummy_{uuid.uuid4()}.txt", content="setup")
@@ -163,10 +160,10 @@ class TestReadFileInferSchema:
         # Now try to read a non-existent file in that bucket
         missing_file_path = f"s3a://{lakehouse_bucket}/nonexistent/file.json"
         
-        processor = BatchFileProcessor(spark_client, FileStateService(test_db), ingestion, test_db)
+        reader = SparkFileReader(spark_client)
 
         with pytest.raises(FileProcessingError) as excinfo:
-            processor._process_single_file(missing_file_path)
+            reader.read_file_infer_schema(missing_file_path, ingestion)
 
         err: FileProcessingError = excinfo.value
         assert (err.category, err.retryable) == (
@@ -187,7 +184,7 @@ class TestReadFileInferSchema:
         Invalid format option should be categorized as format_options_invalid.
         """
         logger = TestLogger()
-        logger.section("Integration Test: _read_file_infer_schema invalid format option")
+        logger.section("Integration Test: read_file_infer_schema invalid format option")
 
         ingestion.format_options = json.dumps({"samplingRatio": "not-a-number"})
         test_db.commit()
@@ -196,10 +193,10 @@ class TestReadFileInferSchema:
             key=f"data/read_infer_invalid_mode_{uuid.uuid4()}.json",
             content=[{"id": 1}]
         )
-        processor = BatchFileProcessor(spark_client, FileStateService(test_db), ingestion, test_db)
+        reader = SparkFileReader(spark_client)
 
         with pytest.raises(FileProcessingError) as excinfo:
-            processor._process_single_file(s3_path)
+            reader.read_file_infer_schema(s3_path, ingestion)
 
         err: FileProcessingError = excinfo.value
 
