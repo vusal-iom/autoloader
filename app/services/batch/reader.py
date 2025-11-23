@@ -3,7 +3,7 @@ from typing import Dict, Optional
 from pyspark.sql import DataFrame
 from app.spark.connect_client import SparkConnectClient
 from app.models.domain import Ingestion
-from app.services.file_processing_errors import FileProcessingError, FileErrorCategory, wrap_error
+from app.services.batch.errors import FileProcessingError, FileErrorCategory, wrap_error
 
 class SparkFileReader:
     """

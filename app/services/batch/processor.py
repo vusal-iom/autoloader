@@ -13,9 +13,9 @@ from app.spark.connect_client import SparkConnectClient
 from app.services.file_state_service import FileStateService
 from app.repositories.schema_version_repository import SchemaVersionRepository
 from app.models.domain import Ingestion, ProcessedFile
-from app.services.spark_file_reader import SparkFileReader
-from app.services.iceberg_table_writer import IcebergTableWriter
-from app.services.file_processing_errors import FileProcessingError, FileErrorCategory, wrap_error
+from app.services.batch.reader import SparkFileReader
+from app.services.batch.writer import IcebergTableWriter
+from app.services.batch.errors import FileProcessingError, FileErrorCategory, wrap_error
 import logging
 import json
 

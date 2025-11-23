@@ -7,10 +7,8 @@ import pytest
 from pyspark.sql.types import StructType, StructField, LongType, StringType
 from chispa import assert_df_equality
 
-from app.services.batch_file_processor import (
-    BatchFileProcessor,
-)
-from app.services.file_processing_errors import FileProcessingError, FileErrorCategory
+from app.services.batch.processor import BatchFileProcessor
+from app.services.batch.errors import FileProcessingError, FileErrorCategory
 from app.services.file_state_service import FileStateService
 from app.repositories.ingestion_repository import IngestionRepository
 from app.models.domain import Ingestion, IngestionStatus

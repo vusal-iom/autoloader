@@ -5,7 +5,7 @@ from app.spark.connect_client import SparkConnectClient
 from app.models.domain import Ingestion
 from app.services.schema_evolution_service import SchemaEvolutionService, SchemaComparison
 from app.repositories.schema_version_repository import SchemaVersionRepository
-from app.services.file_processing_errors import FileProcessingError, FileErrorCategory, wrap_error
+from app.services.batch.errors import FileProcessingError, FileErrorCategory, wrap_error
 
 logger = logging.getLogger(__name__)
 
