@@ -4,7 +4,6 @@ Integration tests for BatchFileProcessor._process_single_file.
 import pytest
 import json
 import uuid
-import io
 from pyspark.sql.types import StructType, StructField, LongType, StringType
 from chispa.dataframe_comparer import assert_df_equality
 
@@ -265,15 +264,12 @@ class TestBatchFileProcessor:
         state_service = FileStateService(test_db)
         processor = BatchFileProcessor(spark_client, state_service, ingestion, test_db)
 
-
-        # try:
-        #     processor._process_single_file(s3_path)
-        # except Exception as e:
-        #     logger.error("Failed to process file: " + str(e))
-
-        # TODO: Need to think how to better handle these exceptions and how we can create visibility to users!
-        with pytest.raises(Exception):
+        with pytest.raises(Exception) as err_info:
             processor._process_single_file(s3_path)
+
+        err = err_info.value
+        err.user_message = "Malformed data encountered. Fix the source file or switch to PERMISSIVE mode."
+
         logger.success("Exception raised as expected")
 
     def test_process_single_file_schema_evolution(
