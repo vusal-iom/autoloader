@@ -7,7 +7,7 @@ from typing import List, Dict
 from app.database import SessionLocal
 from app.repositories.ingestion_repository import IngestionRepository
 from app.services.file_state_service import FileStateService
-from app.services.batch_file_processor import BatchFileProcessor
+from app.services.batch.processor import BatchFileProcessor
 from app.spark.connect_client import SparkConnectClient
 from app.config import get_spark_connect_credentials
 
