@@ -9,9 +9,8 @@ from chispa import assert_df_equality
 
 from app.services.batch_file_processor import (
     BatchFileProcessor,
-    FileProcessingError,
-    FileErrorCategory,
 )
+from app.services.file_processing_errors import FileProcessingError, FileErrorCategory
 from app.services.file_state_service import FileStateService
 from app.repositories.ingestion_repository import IngestionRepository
 from app.models.domain import Ingestion, IngestionStatus
@@ -69,7 +68,8 @@ class TestReadFileInferSchema:
 
         # Invoke
         processor = BatchFileProcessor(spark_client, FileStateService(test_db), ingestion, test_db)
-        df = processor._read_file_infer_schema(s3_path)
+        # Use reader directly to verify DataFrame content
+        df = processor.reader.read_file_infer_schema(s3_path, ingestion)
 
         # Verify schema and rows
         expected_schema = StructType([
@@ -109,8 +109,9 @@ class TestReadFileInferSchema:
 
         processor = BatchFileProcessor(spark_client, FileStateService(test_db), ingestion, test_db)
 
+        # Use _process_single_file to verify error wrapping
         with pytest.raises(FileProcessingError) as excinfo:
-            processor._read_file_infer_schema(s3_path)
+            processor._process_single_file(s3_path)
 
         err: FileProcessingError  = excinfo.value
 
@@ -135,7 +136,7 @@ class TestReadFileInferSchema:
         processor = BatchFileProcessor(spark_client, FileStateService(test_db), ingestion, test_db)
 
         with pytest.raises(FileProcessingError) as excinfo:
-            df = processor._read_file_infer_schema(missing_path)
+            processor._process_single_file(missing_path)
 
         err: FileProcessingError = excinfo.value
         assert (err.category, err.retryable) == (
@@ -167,7 +168,7 @@ class TestReadFileInferSchema:
         processor = BatchFileProcessor(spark_client, FileStateService(test_db), ingestion, test_db)
 
         with pytest.raises(FileProcessingError) as excinfo:
-            df = processor._read_file_infer_schema(missing_file_path)
+            processor._process_single_file(missing_file_path)
 
         err: FileProcessingError = excinfo.value
         assert (err.category, err.retryable) == (
@@ -200,7 +201,7 @@ class TestReadFileInferSchema:
         processor = BatchFileProcessor(spark_client, FileStateService(test_db), ingestion, test_db)
 
         with pytest.raises(FileProcessingError) as excinfo:
-            df = processor._read_file_infer_schema(s3_path)
+            processor._process_single_file(s3_path)
 
         err: FileProcessingError = excinfo.value
 

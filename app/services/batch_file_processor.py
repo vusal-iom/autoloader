@@ -11,41 +11,15 @@ from pyspark.sql import DataFrame
 from sqlalchemy.orm import Session
 from app.spark.connect_client import SparkConnectClient
 from app.services.file_state_service import FileStateService
-from app.services.schema_evolution_service import SchemaEvolutionService, SchemaComparison
 from app.repositories.schema_version_repository import SchemaVersionRepository
 from app.models.domain import Ingestion, ProcessedFile
+from app.services.spark_file_reader import SparkFileReader
+from app.services.iceberg_table_writer import IcebergTableWriter
+from app.services.file_processing_errors import FileProcessingError, FileErrorCategory, wrap_error
 import logging
 import json
 
 logger = logging.getLogger(__name__)
-
-
-class FileErrorCategory(str, Enum):
-    """Predefined error categories for file processing."""
-    DATA_MALFORMED = "data_malformed"
-    SCHEMA_MISMATCH = "schema_mismatch"
-    AUTH = "auth"
-    CONNECTIVITY = "connectivity"
-    WRITE_FAILURE = "write_failure"
-    PATH_NOT_FOUND = "path_not_found"
-    BUCKET_NOT_FOUND = "bucket_not_found"
-    FORMAT_OPTIONS_INVALID = "format_options_invalid"
-    SCHEMA_INFERENCE_FAILURE = "schema_inference_failure"
-    UNKNOWN = "unknown"
-
-
-@dataclass
-class FileProcessingError(Exception):
-    """Predictable, user-facing file processing error."""
-    category: FileErrorCategory
-    retryable: bool
-    user_message: str
-    raw_error: str
-    file_path: str
-    file_path: str
-
-    def __str__(self):
-        return f"[{self.category.value}] {self.user_message}: {self.raw_error}"
 
 
 class BatchFileProcessor:
@@ -69,6 +43,10 @@ class BatchFileProcessor:
         self.ingestion = ingestion
         self.db = db
         self.schema_version_repo = schema_version_repo or SchemaVersionRepository(db)
+        
+        # Initialize helpers
+        self.reader = SparkFileReader(spark_client)
+        self.writer = IcebergTableWriter(spark_client, self.schema_version_repo, db)
 
     def process_files(
         self,
@@ -82,7 +60,6 @@ class BatchFileProcessor:
             files: List of file metadata dicts from FileDiscoveryService
             run_id: ID of the current run for tracking
 
-        Returns:
         Returns:
             Metrics dict: {success: N, failed: N, skipped: N, errors: [ {file_path, error_type, retryable, message, internal_error, stage} ]}
         """
@@ -142,7 +119,7 @@ class BatchFileProcessor:
 
             except Exception as e:
                 # Unexpected error -> wrap and handle
-                wrapped = self._wrap_error(file_path, e)
+                wrapped = wrap_error(file_path, e)
                 self.state.mark_file_failed(
                     file_record,
                     wrapped,
@@ -169,7 +146,6 @@ class BatchFileProcessor:
 
         Args:
             file_path: Full S3 path (e.g., s3://bucket/path/file.json)
-            file_info: File metadata dict
 
         Returns:
             Dict with processing results: {record_count: N}
@@ -177,362 +153,25 @@ class BatchFileProcessor:
         # Step 1: Read file with Spark DataFrame batch API
         if self.ingestion.schema_json:
             # Use predefined schema
-            df = self._read_file_with_schema(file_path)
+            df = self.reader.read_file_with_schema(file_path, self.ingestion)
         else:
             # Infer schema from file
-            df = self._read_file_infer_schema(file_path)
+            df = self.reader.read_file_infer_schema(file_path, self.ingestion)
 
         # Step 2: Get record count (for metrics)
         try:
             record_count = int(df.count())  # Convert to Python int (from numpy.int64)
         except Exception as e:
-            raise self._wrap_error(file_path, e)
+            raise wrap_error(file_path, e)
 
         if record_count == 0:
             logger.warning(f"File {file_path} is empty, skipping write")
             return {'record_count': 0}
 
         # Step 3: Write to Iceberg table (with schema tracking)
-        self._write_to_iceberg(df, file_path)
+        try:
+            self.writer.write(df, file_path, self.ingestion)
+        except Exception as e:
+             raise wrap_error(file_path, e)
 
         return {'record_count': record_count}
-
-    def _read_file_with_schema(self, file_path: str) -> DataFrame:
-        """
-        Read file with predefined schema.
-
-        Args:
-            file_path: Full S3 path
-
-        Returns:
-            Spark DataFrame
-        """
-        spark = self.spark.connect()
-
-        # Configure AWS credentials for S3 access
-        if self.ingestion.source_type == "s3" and self.ingestion.source_credentials:
-            credentials = json.loads(self.ingestion.source_credentials) if isinstance(self.ingestion.source_credentials, str) else self.ingestion.source_credentials
-            if credentials.get('aws_access_key_id'):
-                spark.conf.set("spark.hadoop.fs.s3a.access.key", credentials['aws_access_key_id'])
-                spark.conf.set("spark.hadoop.fs.s3a.secret.key", credentials['aws_secret_access_key'])
-
-        reader = spark.read.format(self.ingestion.format_type)
-
-        # Apply schema if available
-        if self.ingestion.schema_json:
-            from pyspark.sql.types import StructType
-            schema_dict = json.loads(self.ingestion.schema_json) if isinstance(self.ingestion.schema_json, str) else self.ingestion.schema_json
-            schema = StructType.fromJson(schema_dict)
-            reader = reader.schema(schema)
-
-        # Apply format options
-        if self.ingestion.format_options:
-            format_options = json.loads(self.ingestion.format_options) if isinstance(self.ingestion.format_options, str) else self.ingestion.format_options
-            for key, value in format_options.items():
-                reader = reader.option(key, value)
-
-        return reader.load(file_path)
-
-    def _read_file_infer_schema(self, file_path: str) -> DataFrame:
-        """
-        Read file with schema inference.
-
-        Args:
-            file_path: Full S3 path
-
-        Returns:
-            Spark DataFrame
-        """
-        spark = self.spark.connect()
-
-        # Configure AWS credentials for S3 access
-        if self.ingestion.source_type == "s3" and self.ingestion.source_credentials:
-            credentials = json.loads(self.ingestion.source_credentials) if isinstance(self.ingestion.source_credentials, str) else self.ingestion.source_credentials
-            if credentials.get('aws_access_key_id'):
-                spark.conf.set("spark.hadoop.fs.s3a.access.key", credentials['aws_access_key_id'])
-                spark.conf.set("spark.hadoop.fs.s3a.secret.key", credentials['aws_secret_access_key'])
-
-        reader = spark.read \
-            .format(self.ingestion.format_type) \
-            .option("inferSchema", "true")
-
-        # Apply format options
-        if self.ingestion.format_options:
-            format_options = json.loads(self.ingestion.format_options) if isinstance(self.ingestion.format_options, str) else self.ingestion.format_options
-            for key, value in format_options.items():
-                reader = reader.option(key, value)
-
-        df = reader.load(file_path)
-
-        # trigger a very cheap df operation (otherwise df is lazy, it won't throws the exceptions)
-        try:
-            df.limit(1).collect()
-        except Exception as e:
-            raise self._wrap_error(file_path, e)
-
-        return reader.load(file_path)
-
-    def _write_to_iceberg(self, df: DataFrame, file_path: str):
-        """
-        Write DataFrame to Iceberg table with schema evolution support.
-
-        Args:
-            df: Spark DataFrame to write
-            file_path: Path of the file being processed (for schema version tracking)
-        """
-        table_identifier = f"{self.ingestion.destination_catalog}.{self.ingestion.destination_database}.{self.ingestion.destination_table}"
-        spark = self.spark.connect()
-
-        # Check if table exists and handle schema evolution
-        table_exists = self._table_exists(spark, table_identifier)
-
-        if table_exists:
-            # Get schema evolution strategy
-            strategy = getattr(self.ingestion, 'on_schema_change', 'ignore')
-
-            # Apply schema evolution based on strategy (with tracking)
-            # Returns potentially modified DataFrame (e.g., columns dropped for 'ignore' strategy)
-            df = self._apply_schema_evolution(spark, table_identifier, df, strategy, file_path)
-
-        writer = df.write.format("iceberg")
-
-        # Apply write mode
-        if self.ingestion.write_mode:
-            writer = writer.mode(self.ingestion.write_mode)
-        else:
-            writer = writer.mode("append")  # Default
-
-        # Apply partitioning if configured (only on table creation)
-        if not table_exists and self.ingestion.partitioning_enabled and self.ingestion.partitioning_columns:
-            writer = writer.partitionBy(*self.ingestion.partitioning_columns)
-
-        # For Iceberg, use saveAsTable to create table if it doesn't exist
-        # This will create the table on first write and append on subsequent writes
-        try:
-            writer.saveAsTable(table_identifier)
-            logger.debug(f"Wrote DataFrame to {table_identifier}")
-        except Exception as e:
-            raise self._wrap_error(file_path, e)
-
-    def _table_exists(self, spark, table_identifier: str) -> bool:
-        """
-        Check if Iceberg table exists.
-
-        Args:
-            spark: SparkSession
-            table_identifier: Full table identifier (catalog.database.table)
-
-        Returns:
-            True if table exists, False otherwise
-        """
-        try:
-            # Use DESCRIBE TABLE to check existence
-            # This triggers actual table lookup unlike spark.table() which is lazy
-            spark.sql(f"DESCRIBE TABLE {table_identifier}")
-            return True
-        except Exception as e:
-            # Table doesn't exist or other error
-            logger.debug(f"Table {table_identifier} does not exist: {e}")
-            return False
-
-    def _apply_schema_evolution(
-        self,
-        spark,
-        table_identifier: str,
-        df: DataFrame,
-        strategy: str,
-        file_path: str
-    ) -> DataFrame:
-        """
-        Apply schema evolution based on strategy and record version history.
-
-        Args:
-            spark: SparkSession
-            table_identifier: Full table identifier
-            df: DataFrame with new data schema
-            strategy: Schema evolution strategy
-            file_path: Path of file that triggered the schema change
-
-        Returns:
-            Modified DataFrame (e.g., with columns dropped for 'ignore' strategy)
-        """
-        try:
-            # Get current table schema
-            existing_table = spark.table(table_identifier)
-            target_schema = existing_table.schema
-            source_schema = df.schema
-
-            # Compare schemas
-            comparison = SchemaEvolutionService.compare_schemas(source_schema, target_schema)
-
-            if not comparison.has_changes:
-                logger.debug("No schema changes detected")
-                return df
-
-            logger.info(f"Schema changes detected: {len(comparison.added_columns)} added, "
-                       f"{len(comparison.removed_columns)} removed, "
-                       f"{len(comparison.modified_columns)} modified")
-
-            # For 'ignore' strategy, select only columns that exist in target table
-            if strategy == "ignore":
-                df = SchemaEvolutionService.align_dataframe_to_target_schema(df, target_schema)
-                logger.info(
-                    "Strategy 'ignore': Dropped extra columns and aligned missing columns to target schema"
-                )
-                return df
-
-            # Apply evolution strategy for other strategies
-            SchemaEvolutionService.apply_schema_evolution(
-                spark, table_identifier, comparison, strategy
-            )
-
-            # Record schema version after successful evolution
-            # (only if strategy actually modifies the schema)
-            if strategy in ["append_new_columns", "sync_all_columns"]:
-                self._record_schema_version(
-                    spark,
-                    table_identifier,
-                    comparison,
-                    strategy,
-                    file_path
-                )
-
-            return df
-
-        except Exception as e:
-            logger.error(f"Failed to apply schema evolution for {table_identifier}: {e}")
-            raise
-
-    def _record_schema_version(
-        self,
-        spark,
-        table_identifier: str,
-        comparison: SchemaComparison,
-        strategy: str,
-        file_path: str
-    ):
-        """
-        Record schema version change in database.
-
-        Args:
-            spark: SparkSession
-            table_identifier: Full table identifier
-            comparison: SchemaComparison with detected changes
-            strategy: Schema evolution strategy that was applied
-            file_path: Path of file that triggered the change
-        """
-        try:
-            # Get next version number based on ingestion's current schema version
-            next_version = self.ingestion.schema_version + 1
-
-            # Get current schema after evolution
-            current_table = spark.table(table_identifier)
-            current_schema = current_table.schema
-
-            # Convert schema to JSON
-            schema_json = current_schema.jsonValue()
-
-            # Convert schema changes to dict list
-            changes = [change.to_dict() for change in comparison.get_changes()]
-
-            # Create schema version record
-            schema_version = self.schema_version_repo.create_version(
-                ingestion_id=self.ingestion.id,
-                version=next_version,
-                schema_json=schema_json,
-                changes=changes,
-                strategy_applied=strategy,
-                affected_files=[file_path]
-            )
-
-            # Update ingestion's current schema version
-            self.ingestion.schema_version = next_version
-            self.db.commit()
-
-            logger.info(
-                f"Recorded schema version {next_version} for ingestion {self.ingestion.id}. "
-                f"Changes: {len(changes)} modifications triggered by {file_path}"
-            )
-
-        except Exception as e:
-            logger.error(f"Failed to record schema version: {e}", exc_info=True)
-            # Don't fail the entire ingestion if version recording fails
-            # Just log the error and continue
-
-    def _classify_error(self, error: Exception) -> Dict[str, object]:
-        """
-        Classify exceptions into coarse categories with retry guidance.
-
-        Returns dict with keys: category (FileErrorCategory), retryable, user_message
-        """
-        message = str(error) if error else "Unknown error"
-        lower = message.lower()
-
-        category = FileErrorCategory.UNKNOWN
-        retryable = True
-        user_message = message
-
-        if "malformed" in lower or "bad record" in lower or "parse" in lower:
-            category = FileErrorCategory.DATA_MALFORMED
-            retryable = False
-            user_message = "Malformed data encountered. Fix the source file or switch to PERMISSIVE mode."
-        elif "schema" in lower or "cannot resolve" in lower or "analysisexception" in lower:
-            category = FileErrorCategory.SCHEMA_MISMATCH
-            retryable = False
-            user_message = "Schema mismatch detected. Align schema or enable evolution before retrying."
-        elif "no such bucket" in lower or "nosuchbucket" in lower:
-            category = FileErrorCategory.BUCKET_NOT_FOUND
-            retryable = False
-            user_message = "Source bucket not found. Verify bucket name and permissions."
-        elif (
-            "nosuchkey" in lower
-            or "not found" in lower
-            or "does not exist" in lower
-        ):
-            category = FileErrorCategory.PATH_NOT_FOUND
-            retryable = False
-            user_message = "Source path not found. Verify bucket/key/prefix and retry."
-        elif (
-            "unrecognized option" in lower
-            or "unsupported option" in lower
-            or "invalid" in lower
-            or "not a valid" in lower
-            or "for input string" in lower
-            or "numberformatexception" in lower
-        ):
-            category = FileErrorCategory.FORMAT_OPTIONS_INVALID
-            retryable = False
-            user_message = "Invalid format options. Check mode/options for the reader."
-        elif "inference" in lower or "unable to infer" in lower or "requires that the schema" in lower:
-            category = FileErrorCategory.SCHEMA_INFERENCE_FAILURE
-            retryable = False
-            user_message = "Schema inference failed. Provide an explicit schema or fix the input."
-        elif "access denied" in lower or "permission" in lower or "unauthorized" in lower or "forbidden" in lower:
-            category = FileErrorCategory.AUTH
-            retryable = False
-            user_message = "Authentication/authorization failed when accessing the source. Check credentials."
-        elif "connection" in lower or "timeout" in lower or "timed out" in lower:
-            category = FileErrorCategory.CONNECTIVITY
-            retryable = True
-            user_message = "Temporary connectivity issue. Safe to retry."
-        elif "write" in lower or "iceberg" in lower:
-            category = FileErrorCategory.WRITE_FAILURE
-            retryable = True
-            user_message = "Failed to write to the destination table. Retry or check destination health."
-
-        return {
-            "category": category,
-            "retryable": retryable,
-            "user_message": user_message
-        }
-
-    def _wrap_error(self, file_path: str, error: Exception) -> FileProcessingError:
-        """Wrap arbitrary exceptions into a predictable FileProcessingError."""
-        classification = self._classify_error(error)
-        return FileProcessingError(
-            category=classification["category"],
-            retryable=classification["retryable"],
-            user_message=classification["user_message"],
-            raw_error=str(error),
-            file_path=file_path
-        )
