@@ -6,7 +6,7 @@ Tests that schema versions are recorded when schema evolution occurs.
 import pytest
 import uuid
 
-from app.services.batch_file_processor import BatchFileProcessor
+from app.services.batch.processor import BatchFileProcessor
 from app.services.file_state_service import FileStateService
 from app.repositories.schema_version_repository import SchemaVersionRepository
 from app.repositories.ingestion_repository import IngestionRepository
@@ -75,7 +75,7 @@ class TestSchemaVersionTracking:
         processor = BatchFileProcessor(spark_client, state_service, ingestion, test_db)
 
         # Process DataFrame - this should trigger schema evolution
-        processor._write_to_iceberg(df, file_path)
+        processor.writer.write(df, file_path, ingestion)
 
         # Verify schema version was recorded
         schema_repo = SchemaVersionRepository(test_db)
@@ -121,7 +121,7 @@ class TestSchemaVersionTracking:
         state_service = FileStateService(test_db)
         processor = BatchFileProcessor(spark_client, state_service, ingestion, test_db)
 
-        processor._write_to_iceberg(df, file_path)
+        processor.writer.write(df, file_path, ingestion)
 
         # Verify NO schema version was recorded (because strategy is ignore)
         schema_repo = SchemaVersionRepository(test_db)
@@ -160,7 +160,7 @@ class TestSchemaVersionTracking:
         state_service = FileStateService(test_db)
         processor = BatchFileProcessor(spark_client, state_service, ingestion, test_db)
 
-        processor._write_to_iceberg(df, file_path)
+        processor.writer.write(df, file_path, ingestion)
 
         # Verify schema version was recorded
         schema_repo = SchemaVersionRepository(test_db)
@@ -199,14 +199,14 @@ class TestSchemaVersionTracking:
         df1 = spark_session.createDataFrame(data1)
         file1_path = "test_file_data1.json"  # Virtual path for tracking
 
-        processor._write_to_iceberg(df1, file1_path)
+        processor.writer.write(df1, file1_path, ingestion)
 
         # Second schema change: add "phone"
         data2 = [{"id": 2, "name": "Bob", "email": "bob@example.com", "phone": "555-1234"}]
         df2 = spark_session.createDataFrame(data2)
         file2_path = "test_file_data2.json"  # Virtual path for tracking
 
-        processor._write_to_iceberg(df2, file2_path)
+        processor.writer.write(df2, file2_path, ingestion)
 
         # Verify two versions were recorded
         schema_repo = SchemaVersionRepository(test_db)
@@ -242,7 +242,7 @@ class TestSchemaVersionTracking:
         state_service = FileStateService(test_db)
         processor = BatchFileProcessor(spark_client, state_service, ingestion, test_db)
 
-        processor._write_to_iceberg(df, file_path)
+        processor.writer.write(df, file_path, ingestion)
 
         # Verify NO schema version was recorded (no changes)
         schema_repo = SchemaVersionRepository(test_db)
@@ -276,7 +276,7 @@ class TestSchemaVersionTracking:
         state_service = FileStateService(test_db)
         processor = BatchFileProcessor(spark_client, state_service, ingestion, test_db)
 
-        processor._write_to_iceberg(df, file_path)
+        processor.writer.write(df, file_path, ingestion)
 
         # Verify schema_json contains all columns (including new one)
         schema_repo = SchemaVersionRepository(test_db)
