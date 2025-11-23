@@ -262,6 +262,14 @@ class BatchFileProcessor:
             for key, value in format_options.items():
                 reader = reader.option(key, value)
 
+        df = reader.load(file_path)
+
+        # trigger a very cheap df operation (otherwise df is lazy, it won't throws the exceptions)
+        try:
+            df.limit(1).collect()
+        except Exception as e:
+            raise self._wrap_error(file_path, e)
+
         return reader.load(file_path)
 
     def _write_to_iceberg(self, df: DataFrame, file_path: str):

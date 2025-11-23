@@ -3,7 +3,6 @@ Integration tests for BatchFileProcessor._read_file_infer_schema.
 """
 import json
 import uuid
-import io
 import pytest
 from pyspark.sql.types import StructType, StructField, LongType, StringType
 from chispa import assert_df_equality
@@ -111,12 +110,7 @@ class TestReadFileInferSchema:
         processor = BatchFileProcessor(spark_client, FileStateService(test_db), ingestion, test_db)
 
         with pytest.raises(FileProcessingError) as excinfo:
-            df = processor._read_file_infer_schema(s3_path)
-            try:
-                df.limit(1).collect()
-            except Exception as e:
-                # Wrap the lazy Spark error into a predictable domain error
-                raise processor._wrap_error(s3_path, e)
+            processor._read_file_infer_schema(s3_path)
 
         err: FileProcessingError  = excinfo.value
 
@@ -142,10 +136,6 @@ class TestReadFileInferSchema:
 
         with pytest.raises(FileProcessingError) as excinfo:
             df = processor._read_file_infer_schema(missing_path)
-            try:
-                df.limit(1).collect()
-            except Exception as e:
-                raise processor._wrap_error(missing_path, e)
 
         err: FileProcessingError = excinfo.value
         assert (err.category, err.retryable) == (
@@ -178,10 +168,6 @@ class TestReadFileInferSchema:
 
         with pytest.raises(FileProcessingError) as excinfo:
             df = processor._read_file_infer_schema(missing_file_path)
-            try:
-                df.limit(1).collect()
-            except Exception as e:
-                raise processor._wrap_error(missing_file_path, e)
 
         err: FileProcessingError = excinfo.value
         assert (err.category, err.retryable) == (
@@ -215,10 +201,6 @@ class TestReadFileInferSchema:
 
         with pytest.raises(FileProcessingError) as excinfo:
             df = processor._read_file_infer_schema(s3_path)
-            try:
-                df.limit(1).collect()
-            except Exception as e:
-                raise processor._wrap_error(s3_path, e)
 
         err: FileProcessingError = excinfo.value
 
