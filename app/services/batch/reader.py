@@ -3,7 +3,7 @@ import json
 from pyspark.sql import DataFrame
 
 from app.models.domain import Ingestion
-from app.services.batch.errors import wrap_error
+from app.services.batch.errors import FileProcessingError, FileErrorCategory
 from app.spark.connect_client import SparkConnectClient
 
 
@@ -15,6 +15,72 @@ class SparkFileReader:
 
     def __init__(self, spark_client: SparkConnectClient):
         self.spark_client = spark_client
+
+    def _classify_error(self, error: Exception) -> dict:
+        """Classify reader-specific errors."""
+        message = str(error) if error else "Unknown error"
+        lower = message.lower()
+
+        category = FileErrorCategory.UNKNOWN
+        retryable = True
+        user_message = message
+
+        if "malformed" in lower or "bad record" in lower or "parse" in lower:
+            category = FileErrorCategory.DATA_MALFORMED
+            retryable = False
+            user_message = "Malformed data encountered. Fix the source file or switch to PERMISSIVE mode."
+        elif "no such bucket" in lower or "nosuchbucket" in lower:
+            category = FileErrorCategory.BUCKET_NOT_FOUND
+            retryable = False
+            user_message = "Source bucket not found. Verify bucket name and permissions."
+        elif (
+            "nosuchkey" in lower
+            or "not found" in lower
+            or "does not exist" in lower
+        ):
+            category = FileErrorCategory.PATH_NOT_FOUND
+            retryable = False
+            user_message = "Source path not found. Verify bucket/key/prefix and retry."
+        elif (
+            "unrecognized option" in lower
+            or "unsupported option" in lower
+            or "invalid" in lower
+            or "not a valid" in lower
+            or "for input string" in lower
+            or "numberformatexception" in lower
+        ):
+            category = FileErrorCategory.FORMAT_OPTIONS_INVALID
+            retryable = False
+            user_message = "Invalid format options. Check mode/options for the reader."
+        elif "inference" in lower or "unable to infer" in lower or "requires that the schema" in lower:
+            category = FileErrorCategory.SCHEMA_INFERENCE_FAILURE
+            retryable = False
+            user_message = "Schema inference failed. Provide an explicit schema or fix the input."
+        elif "access denied" in lower or "permission" in lower or "unauthorized" in lower or "forbidden" in lower:
+            category = FileErrorCategory.AUTH
+            retryable = False
+            user_message = "Authentication/authorization failed when accessing the source. Check credentials."
+        elif "connection" in lower or "timeout" in lower or "timed out" in lower:
+            category = FileErrorCategory.CONNECTIVITY
+            retryable = True
+            user_message = "Temporary connectivity issue. Safe to retry."
+
+        return {
+            "category": category,
+            "retryable": retryable,
+            "user_message": user_message
+        }
+
+    def _wrap_error(self, file_path: str, error: Exception) -> FileProcessingError:
+        """Wrap reader exceptions into FileProcessingError."""
+        classification = self._classify_error(error)
+        return FileProcessingError(
+            category=classification["category"],
+            retryable=classification["retryable"],
+            user_message=classification["user_message"],
+            raw_error=str(error),
+            file_path=file_path
+        )
 
     def read_file_with_schema(self, file_path: str, ingestion: Ingestion) -> DataFrame:
         """
@@ -54,7 +120,7 @@ class SparkFileReader:
         try:
             return reader.load(file_path)
         except Exception as e:
-            raise wrap_error(file_path, e)
+            raise self._wrap_error(file_path, e)
 
     def read_file_infer_schema(self, file_path: str, ingestion: Ingestion) -> DataFrame:
         """
@@ -92,6 +158,6 @@ class SparkFileReader:
         try:
             df.limit(1).collect()
         except Exception as e:
-            raise wrap_error(file_path, e)
+            raise self._wrap_error(file_path, e)
 
         return df
