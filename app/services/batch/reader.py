@@ -5,6 +5,13 @@ from pyspark.sql import DataFrame
 from app.models.domain import Ingestion
 from app.services.batch.errors import FileProcessingError, FileErrorCategory
 from app.spark.connect_client import SparkConnectClient
+from pyspark.errors import (
+    AnalysisException,
+    ParseException,
+    IllegalArgumentException,
+    NumberFormatException,
+    PythonException
+)
 
 
 class SparkFileReader:
@@ -25,45 +32,70 @@ class SparkFileReader:
         retryable = True
         user_message = message
 
-        if "malformed" in lower or "bad record" in lower or "parse" in lower:
-            category = FileErrorCategory.DATA_MALFORMED
-            retryable = False
-            user_message = "Malformed data encountered. Fix the source file or switch to PERMISSIVE mode."
-        elif "no such bucket" in lower or "nosuchbucket" in lower:
-            category = FileErrorCategory.BUCKET_NOT_FOUND
-            retryable = False
-            user_message = "Source bucket not found. Verify bucket name and permissions."
-        elif (
-            "nosuchkey" in lower
-            or "not found" in lower
-            or "does not exist" in lower
-        ):
-            category = FileErrorCategory.PATH_NOT_FOUND
-            retryable = False
-            user_message = "Source path not found. Verify bucket/key/prefix and retry."
-        elif (
-            "unrecognized option" in lower
-            or "unsupported option" in lower
-            or "invalid" in lower
-            or "not a valid" in lower
-            or "for input string" in lower
-            or "numberformatexception" in lower
-        ):
+        # 1. Check for specific PySpark exceptions (more robust)
+        if isinstance(error, (NumberFormatException, IllegalArgumentException)):
             category = FileErrorCategory.FORMAT_OPTIONS_INVALID
             retryable = False
             user_message = "Invalid format options. Check mode/options for the reader."
-        elif "inference" in lower or "unable to infer" in lower or "requires that the schema" in lower:
-            category = FileErrorCategory.SCHEMA_INFERENCE_FAILURE
+        
+        elif isinstance(error, AnalysisException):
+            # AnalysisException covers missing files/paths
+            if "path does not exist" in lower or "filenotfoundexception" in lower:
+                category = FileErrorCategory.PATH_NOT_FOUND
+                retryable = False
+                user_message = "Source path not found. Verify bucket/key/prefix and retry."
+            else:
+                # Fallback for other analysis exceptions (e.g. schema issues)
+                category = FileErrorCategory.SCHEMA_MISMATCH
+                retryable = False
+                user_message = "Schema analysis failed. Check if the schema matches the data."
+
+        elif isinstance(error, ParseException):
+            category = FileErrorCategory.DATA_MALFORMED
             retryable = False
-            user_message = "Schema inference failed. Provide an explicit schema or fix the input."
-        elif "access denied" in lower or "permission" in lower or "unauthorized" in lower or "forbidden" in lower:
-            category = FileErrorCategory.AUTH
-            retryable = False
-            user_message = "Authentication/authorization failed when accessing the source. Check credentials."
-        elif "connection" in lower or "timeout" in lower or "timed out" in lower:
-            category = FileErrorCategory.CONNECTIVITY
-            retryable = True
-            user_message = "Temporary connectivity issue. Safe to retry."
+            user_message = "Malformed data encountered. Fix the source file or switch to PERMISSIVE mode."
+
+        # 2. Fallback to string matching for other errors or generic exceptions
+        elif category == FileErrorCategory.UNKNOWN:
+            if "malformed" in lower or "bad record" in lower or "parse" in lower:
+                category = FileErrorCategory.DATA_MALFORMED
+                retryable = False
+                user_message = "Malformed data encountered. Fix the source file or switch to PERMISSIVE mode."
+            elif "no such bucket" in lower or "nosuchbucket" in lower:
+                category = FileErrorCategory.BUCKET_NOT_FOUND
+                retryable = False
+                user_message = "Source bucket not found. Verify bucket name and permissions."
+            elif (
+                "nosuchkey" in lower
+                or "not found" in lower
+                or "does not exist" in lower
+            ):
+                category = FileErrorCategory.PATH_NOT_FOUND
+                retryable = False
+                user_message = "Source path not found. Verify bucket/key/prefix and retry."
+            elif (
+                "unrecognized option" in lower
+                or "unsupported option" in lower
+                or "invalid" in lower
+                or "not a valid" in lower
+                or "for input string" in lower
+                or "numberformatexception" in lower
+            ):
+                category = FileErrorCategory.FORMAT_OPTIONS_INVALID
+                retryable = False
+                user_message = "Invalid format options. Check mode/options for the reader."
+            elif "inference" in lower or "unable to infer" in lower or "requires that the schema" in lower:
+                category = FileErrorCategory.SCHEMA_INFERENCE_FAILURE
+                retryable = False
+                user_message = "Schema inference failed. Provide an explicit schema or fix the input."
+            elif "access denied" in lower or "permission" in lower or "unauthorized" in lower or "forbidden" in lower:
+                category = FileErrorCategory.AUTH
+                retryable = False
+                user_message = "Authentication/authorization failed when accessing the source. Check credentials."
+            elif "connection" in lower or "timeout" in lower or "timed out" in lower:
+                category = FileErrorCategory.CONNECTIVITY
+                retryable = True
+                user_message = "Temporary connectivity issue. Safe to retry."
 
         return {
             "category": category,
