@@ -227,3 +227,9 @@ assert_df_equality(df_actual, df_expected, ignore_column_order=True, ignore_row_
 - Data verification: Validate in Spark after API actions. Use `verify_table_data` for counts/fields/duplicates and `assert_df_equality` for exact dataset comparisons when manageable.
 - Quick start: `docker-compose -f docker-compose.test.yml up -d` (wait ~1–2 min), then `pytest tests/e2e/ -v`.
 - Critical don'ts: No direct DB queries, no hardcoded table names, no custom polling (use helpers), no mocks.
+
+
+
+## Misc
+
+Ignore IDE warnings
