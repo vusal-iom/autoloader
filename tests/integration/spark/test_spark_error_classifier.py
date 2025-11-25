@@ -113,6 +113,7 @@ def test_malformed_json_failfast_is_classified(
     assert fpe.category == FileErrorCategory.DATA_MALFORMED
     assert fpe.retryable is False
     assert fpe.file_path == malformed_path
+    assert fpe.user_message == "Malformed data encountered. Fix file or switch reader mode."
     assert _assert_message_contains(
         fpe.raw_error,
         ["malformed", "JSON", "parser", "Parse Mode: FAILFAST"],
@@ -144,6 +145,7 @@ def test_malformed_csv_failfast_is_classified(
 
     assert fpe.category == FileErrorCategory.DATA_MALFORMED
     assert fpe.retryable is False
+    assert fpe.user_message == "Malformed data encountered. Fix input file or adjust reader mode."
     assert _assert_message_contains(
         fpe.raw_error,
         ["malformed", "CSV", "Parse Mode: FAILFAST", "corrupt"],
@@ -174,6 +176,7 @@ def test_invalid_format_option_sampling_ratio_is_classified(
     assert fpe.category == FileErrorCategory.FORMAT_OPTIONS_INVALID
     assert fpe.retryable is False
     assert fpe.file_path == valid_path
+    assert fpe.user_message == "Invalid format options. Check numeric parameters."
     assert _assert_message_contains(
         fpe.raw_error,
         ["For input string", "invalid", "NumberFormatException"],
@@ -203,6 +206,7 @@ def test_invalid_format_option_mode_is_classified(
 
     assert fpe.category == FileErrorCategory.FORMAT_OPTIONS_INVALID
     assert fpe.retryable is False
+    assert fpe.user_message == "Invalid reader format option."
     assert _assert_message_contains(
         fpe.raw_error,
         ["Invalid", "mode", "NOT_A_MODE", "illegal"],
@@ -236,6 +240,7 @@ def test_corrupt_parquet_is_classified_as_malformed(
 
     assert fpe.category == FileErrorCategory.DATA_MALFORMED
     assert fpe.retryable is False
+    assert fpe.user_message == "Malformed data encountered. Fix input file or adjust reader mode."
     assert _assert_message_contains(
         fpe.raw_error,
         ["corrupt", "footer", "Malformed", "Parquet"],
@@ -258,6 +263,7 @@ def test_glob_no_match_maps_to_path_not_found(
 
     assert fpe.category == FileErrorCategory.PATH_NOT_FOUND
     assert fpe.retryable is False
+    assert fpe.user_message == "Source path not found."
     assert _assert_message_contains(
         fpe.raw_error,
         ["does not exist", "Path does not exist", "FileNotFoundException"],

@@ -10,6 +10,7 @@ This classifier:
 - Only uses fallback string heuristics when unavoidable
 """
 
+from typing import Optional
 import traceback
 
 from pyspark.errors.exceptions.captured import CapturedException
@@ -82,7 +83,7 @@ class SparkErrorClassifier:
         return "".join(traceback.format_exception_only(type(exc), exc)).strip()
 
     @staticmethod
-    def _extract_spark_error_class(exc: Exception) -> str | None:
+    def _extract_spark_error_class(exc: Exception) -> Optional[str]:
         """
         Spark ErrorClass is available for:
         - SparkConnectGrpcException (Connect mode)
@@ -100,7 +101,7 @@ class SparkErrorClassifier:
     # Tier 1 — Spark ErrorClass (Stable API)
     # ========================================================================
     @staticmethod
-    def _classify_error_class(error_class: str | None, raw: str, file_path: str):
+    def _classify_error_class(error_class: Optional[str], raw: str, file_path: str):
         if not error_class:
             return None
 
