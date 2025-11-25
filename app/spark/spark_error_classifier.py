@@ -210,14 +210,16 @@ class SparkErrorClassifier:
     # ========================================================================
     @staticmethod
     def _classify_format_level(raw: str, file_path: str):
+        raw_lower = raw.lower()
+
         malformed_markers = [
-            "Malformed records",
+            "malformed records",
             "malformed",
-            "Parse Mode: FAILFAST",
+            "parse mode: failfast",
             "corrupt",
         ]
 
-        if any(m.lower() in raw.lower() for m in malformed_markers):
+        if any(m in raw_lower for m in malformed_markers):
             return FileProcessingError(
                 category=FileErrorCategory.DATA_MALFORMED,
                 retryable=False,
@@ -226,8 +228,31 @@ class SparkErrorClassifier:
                 raw_error=raw,
             )
 
+        # Parquet-specific corruption (footer read failures, magic number issues)
+        parquet_corruption_markers = [
+            "parquetfileformat",
+            "is not a parquet file",
+            "could not read footer",
+            "expected magic number",
+            "not a valid parquet",
+        ]
+        if any(m in raw_lower for m in parquet_corruption_markers):
+            return FileProcessingError(
+                category=FileErrorCategory.DATA_MALFORMED,
+                retryable=False,
+                file_path=file_path,
+                user_message="Malformed parquet file. Fix input file or verify format.",
+                raw_error=raw,
+            )
+
         # format option errors
-        if "For input string" in raw or "Invalid" in raw or "cannot parse" in raw.lower():
+        format_option_markers = [
+            "for input string",
+            "cannot parse",
+            "should be an integer",
+            "should be a boolean",
+        ]
+        if "Invalid" in raw or any(m in raw_lower for m in format_option_markers):
             return FileProcessingError(
                 category=FileErrorCategory.FORMAT_OPTIONS_INVALID,
                 retryable=False,
