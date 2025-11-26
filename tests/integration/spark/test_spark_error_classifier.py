@@ -17,9 +17,8 @@ def classify_and_assert(
     exc: Exception,
     file_path: str,
     expected_category: FileErrorCategory,
+    user_message: str,
     expected_retryable: bool = False,
-    user_message_contains: str | None = None,
-    user_message_exact: str | None = None,
     raw_error_contains: list[str] | None = None,
 ) -> FileProcessingError:
     """
@@ -31,13 +30,8 @@ def classify_and_assert(
     assert fpe.category == expected_category, f"Expected {expected_category}, got {fpe.category}"
     assert fpe.retryable == expected_retryable
     assert fpe.file_path == file_path
-
-    if user_message_exact:
-        assert fpe.user_message == user_message_exact, \
-            f"Expected '{user_message_exact}', got '{fpe.user_message}'"
-    elif user_message_contains:
-        assert user_message_contains in fpe.user_message, \
-            f"Expected '{user_message_contains}' in '{fpe.user_message}'"
+    assert fpe.user_message == user_message, \
+        f"Expected '{user_message}', got '{fpe.user_message}'"
 
     if raw_error_contains:
         raw_lower = fpe.raw_error.lower()
@@ -58,7 +52,7 @@ def test_bucket_not_found_is_classified(spark_session):
         excinfo.value,
         file_path=missing_path,
         expected_category=FileErrorCategory.BUCKET_NOT_FOUND,
-        user_message_exact="Source bucket not found.",
+        user_message="Source bucket not found.",
         raw_error_contains=["NoSuchBucket", "bucket does not exist", "UnknownStoreException"],
     )
 
@@ -74,7 +68,7 @@ def test_path_not_found_is_classified(spark_session, lakehouse_bucket):
         excinfo.value,
         file_path=missing_path,
         expected_category=FileErrorCategory.PATH_NOT_FOUND,
-        user_message_exact="Source path not found.",
+        user_message="Source path not found.",
         raw_error_contains=["does not exist", "Path does not exist", "FileNotFoundException"],
     )
 
@@ -94,7 +88,7 @@ def test_malformed_json_failfast_is_classified(spark_session, upload_file):
         excinfo.value,
         file_path=malformed_path,
         expected_category=FileErrorCategory.DATA_MALFORMED,
-        user_message_contains="Malformed data encountered",
+        user_message="Malformed data encountered. Fix input file or adjust reader mode.",
         raw_error_contains=["malformed", "JSON", "parser", "Parse Mode: FAILFAST"],
     )
 
@@ -113,7 +107,7 @@ def test_invalid_format_option_sampling_ratio_is_classified(spark_session, uploa
         excinfo.value,
         file_path=valid_path,
         expected_category=FileErrorCategory.FORMAT_OPTIONS_INVALID,
-        user_message_exact="Invalid format options. Check numeric parameters.",
+        user_message="Invalid format options. Check numeric parameters.",
         raw_error_contains=["For input string", "invalid", "NumberFormatException"],
     )
 
@@ -131,14 +125,13 @@ def test_corrupt_parquet_is_classified_as_malformed(spark_session, upload_file):
     with pytest.raises(Exception) as excinfo:
         spark_session.read.parquet(corrupt_path).collect()
 
-    fpe = classify_and_assert(
+    classify_and_assert(
         excinfo.value,
         file_path=corrupt_path,
         expected_category=FileErrorCategory.DATA_MALFORMED,
+        user_message="Malformed parquet file. Fix input file or verify format.",
         raw_error_contains=["ParquetFileFormat", "Parquet", "footer"],
     )
-    # User message varies by error path
-    assert "Malformed" in fpe.user_message or "parquet" in fpe.user_message.lower()
 
 
 def test_analysis_exception_without_path_maps_to_unknown(spark_session):
@@ -151,7 +144,7 @@ def test_analysis_exception_without_path_maps_to_unknown(spark_session):
         excinfo.value,
         file_path="s3a://irrelevant/path.json",
         expected_category=FileErrorCategory.UNKNOWN,
-        user_message_exact="Failed to analyze Spark plan.",
+        user_message="Failed to analyze Spark plan.",
         raw_error_contains=["TABLE_OR_VIEW_NOT_FOUND", "cannot be found"],
     )
 
@@ -172,5 +165,6 @@ def test_python_exception_falls_back_to_unknown(spark_session):
         excinfo.value,
         file_path="s3a://irrelevant/file.json",
         expected_category=FileErrorCategory.UNKNOWN,
+        user_message="Unexpected error while reading the file. Check details.",
         raw_error_contains=["Python worker", "ZeroDivisionError", "PythonException"],
     )
