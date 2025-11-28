@@ -72,52 +72,6 @@ class SparkConnectClient:
                 "connect_url": self.connect_url,
             }
 
-    def preview_files(
-        self,
-        source_path: str,
-        format_type: str,
-        format_options: Dict[str, Any],
-        limit: int = 100,
-    ) -> Dict[str, Any]:
-        """
-        Preview files without creating a streaming query.
-
-        Args:
-            source_path: Source path
-            format_type: File format
-            format_options: Format options
-            limit: Number of rows to preview
-
-        Returns:
-            Preview result with schema and sample data
-        """
-        spark = self.connect()
-
-        # Read sample data (batch mode)
-        df = spark.read.format(format_type).options(**format_options).load(source_path).limit(limit)
-
-        # Infer schema
-        schema = [
-            {
-                "name": field.name,
-                "data_type": field.dataType.simpleString,
-                "nullable": field.nullable,
-            }
-            for field in df.schema.fields
-        ]
-
-        # Get sample data
-        sample_data = [row.asDict() for row in df.take(5)]
-
-        # Count files
-        file_count = spark.read.format("binaryFile").load(source_path).count()
-
-        return {
-            "schema": schema,
-            "sample_data": sample_data,
-            "file_count": file_count,
-        }
-
     def stop(self):
         """Stop Spark session."""
         if self.session:
