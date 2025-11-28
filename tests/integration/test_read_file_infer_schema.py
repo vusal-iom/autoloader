@@ -1,7 +1,6 @@
 """
 Integration tests for SparkFileReader.read_file_infer_schema.
 """
-import json
 import uuid
 import pytest
 from pyspark.sql.types import StructType, StructField, LongType, IntegerType, StringType
@@ -9,7 +8,7 @@ from chispa import assert_df_equality
 
 from app.services.batch.reader import SparkFileReader
 from app.services.batch.errors import FileProcessingError, FileErrorCategory
-from app.models.domain import Ingestion, IngestionStatus
+from tests.fixtures.ingestion_factory import create_test_ingestion
 from tests.helpers.logger import TestLogger
 
 
@@ -20,32 +19,7 @@ class TestReadFileInferSchema:
     @pytest.fixture
     def ingestion(self, test_db):
         """Create ingestion configured for schema inference."""
-        unique_id = str(uuid.uuid4())
-        ingestion = Ingestion(
-            id=f"test-ingestion-{unique_id}",
-            tenant_id="test-tenant",
-            name="Test Read Infer Schema",
-            cluster_id="test-cluster-1",
-            source_type="s3",
-            source_path="s3://test-bucket/data/",
-            source_credentials={
-                "aws_access_key_id": "test",
-                "aws_secret_access_key": "test"
-            },
-            format_type="json",
-            destination_catalog="test_catalog",
-            destination_database="test_db",
-            destination_table=f"batch_test_{unique_id[:8]}",
-            checkpoint_location=f"/tmp/test-checkpoint-{unique_id}",
-            status=IngestionStatus.ACTIVE,
-            on_schema_change="append_new_columns",
-            schema_version=1,
-            created_by="test-user"
-        )
-        test_db.add(ingestion)
-        test_db.commit()
-        test_db.refresh(ingestion)
-        return ingestion
+        return create_test_ingestion(test_db, name_prefix="Test Read Infer Schema")
 
     def test_read_infer_schema_success(
         self, test_db, spark_client, spark_session, upload_file, ingestion
@@ -127,63 +101,21 @@ class TestReadFileInferSchemaFormats:
     @pytest.fixture
     def csv_ingestion(self, test_db):
         """Create ingestion configured for CSV format."""
-        unique_id = str(uuid.uuid4())
-        ingestion = Ingestion(
-            id=f"test-ingestion-csv-{unique_id}",
-            tenant_id="test-tenant",
-            name="Test CSV Infer Schema",
-            cluster_id="test-cluster-1",
-            source_type="s3",
-            source_path="s3://test-bucket/data/",
-            source_credentials={
-                "aws_access_key_id": "test",
-                "aws_secret_access_key": "test"
-            },
+        return create_test_ingestion(
+            test_db,
             format_type="csv",
-            format_options=json.dumps({"header": "true"}),
-            destination_catalog="test_catalog",
-            destination_database="test_db",
-            destination_table=f"batch_csv_{unique_id[:8]}",
-            checkpoint_location=f"/tmp/test-checkpoint-{unique_id}",
-            status=IngestionStatus.ACTIVE,
-            on_schema_change="append_new_columns",
-            schema_version=1,
-            created_by="test-user"
+            format_options={"header": "true"},
+            name_prefix="Test CSV Infer Schema"
         )
-        test_db.add(ingestion)
-        test_db.commit()
-        test_db.refresh(ingestion)
-        return ingestion
 
     @pytest.fixture
     def parquet_ingestion(self, test_db):
         """Create ingestion configured for Parquet format."""
-        unique_id = str(uuid.uuid4())
-        ingestion = Ingestion(
-            id=f"test-ingestion-parquet-{unique_id}",
-            tenant_id="test-tenant",
-            name="Test Parquet Infer Schema",
-            cluster_id="test-cluster-1",
-            source_type="s3",
-            source_path="s3://test-bucket/data/",
-            source_credentials={
-                "aws_access_key_id": "test",
-                "aws_secret_access_key": "test"
-            },
+        return create_test_ingestion(
+            test_db,
             format_type="parquet",
-            destination_catalog="test_catalog",
-            destination_database="test_db",
-            destination_table=f"batch_parquet_{unique_id[:8]}",
-            checkpoint_location=f"/tmp/test-checkpoint-{unique_id}",
-            status=IngestionStatus.ACTIVE,
-            on_schema_change="append_new_columns",
-            schema_version=1,
-            created_by="test-user"
+            name_prefix="Test Parquet Infer Schema"
         )
-        test_db.add(ingestion)
-        test_db.commit()
-        test_db.refresh(ingestion)
-        return ingestion
 
     def test_read_infer_schema_csv_success(
         self, test_db, spark_client, spark_session, upload_file, csv_ingestion
@@ -268,64 +200,21 @@ class TestReadFileFormatOptions:
     @pytest.fixture
     def csv_custom_delimiter_ingestion(self, test_db):
         """Create ingestion with custom CSV delimiter."""
-        unique_id = str(uuid.uuid4())
-        ingestion = Ingestion(
-            id=f"test-ingestion-csv-delim-{unique_id}",
-            tenant_id="test-tenant",
-            name="Test CSV Custom Delimiter",
-            cluster_id="test-cluster-1",
-            source_type="s3",
-            source_path="s3://test-bucket/data/",
-            source_credentials={
-                "aws_access_key_id": "test",
-                "aws_secret_access_key": "test"
-            },
+        return create_test_ingestion(
+            test_db,
             format_type="csv",
-            format_options=json.dumps({"header": "true", "delimiter": "|"}),
-            destination_catalog="test_catalog",
-            destination_database="test_db",
-            destination_table=f"batch_csv_delim_{unique_id[:8]}",
-            checkpoint_location=f"/tmp/test-checkpoint-{unique_id}",
-            status=IngestionStatus.ACTIVE,
-            on_schema_change="append_new_columns",
-            schema_version=1,
-            created_by="test-user"
+            format_options={"header": "true", "delimiter": "|"},
+            name_prefix="Test CSV Custom Delimiter"
         )
-        test_db.add(ingestion)
-        test_db.commit()
-        test_db.refresh(ingestion)
-        return ingestion
 
     @pytest.fixture
     def json_multiline_ingestion(self, test_db):
         """Create ingestion with multiline JSON option."""
-        unique_id = str(uuid.uuid4())
-        ingestion = Ingestion(
-            id=f"test-ingestion-json-multi-{unique_id}",
-            tenant_id="test-tenant",
-            name="Test JSON Multiline",
-            cluster_id="test-cluster-1",
-            source_type="s3",
-            source_path="s3://test-bucket/data/",
-            source_credentials={
-                "aws_access_key_id": "test",
-                "aws_secret_access_key": "test"
-            },
-            format_type="json",
-            format_options=json.dumps({"multiLine": "true"}),
-            destination_catalog="test_catalog",
-            destination_database="test_db",
-            destination_table=f"batch_json_multi_{unique_id[:8]}",
-            checkpoint_location=f"/tmp/test-checkpoint-{unique_id}",
-            status=IngestionStatus.ACTIVE,
-            on_schema_change="append_new_columns",
-            schema_version=1,
-            created_by="test-user"
+        return create_test_ingestion(
+            test_db,
+            format_options={"multiLine": "true"},
+            name_prefix="Test JSON Multiline"
         )
-        test_db.add(ingestion)
-        test_db.commit()
-        test_db.refresh(ingestion)
-        return ingestion
 
     def test_read_csv_with_custom_delimiter(
         self, test_db, spark_client, spark_session, upload_file, csv_custom_delimiter_ingestion

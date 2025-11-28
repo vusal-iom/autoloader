@@ -8,7 +8,7 @@ from pyspark.sql.types import StructType, StructField, LongType, StringType
 from chispa import assert_df_equality
 
 from app.services.batch.reader import SparkFileReader
-from app.models.domain import Ingestion, IngestionStatus
+from tests.fixtures.ingestion_factory import create_test_ingestion
 from tests.helpers.logger import TestLogger
 
 
@@ -28,33 +28,11 @@ class TestReadFileWithSchema:
     @pytest.fixture
     def ingestion_with_schema(self, test_db, schema):
         """Create ingestion with predefined schema."""
-        unique_id = str(uuid.uuid4())
-        ingestion = Ingestion(
-            id=f"test-ingestion-{unique_id}",
-            tenant_id="test-tenant",
-            name="Test Read With Schema",
-            cluster_id="test-cluster-1",
-            source_type="s3",
-            source_path="s3://test-bucket/data/",
-            source_credentials={
-                "aws_access_key_id": "test",
-                "aws_secret_access_key": "test"
-            },
-            format_type="json",
+        return create_test_ingestion(
+            test_db,
             schema_json=json.dumps(schema.jsonValue()),
-            destination_catalog="test_catalog",
-            destination_database="test_db",
-            destination_table=f"batch_test_{unique_id[:8]}",
-            checkpoint_location=f"/tmp/test-checkpoint-{unique_id}",
-            status=IngestionStatus.ACTIVE,
-            on_schema_change="append_new_columns",
-            schema_version=1,
-            created_by="test-user"
+            name_prefix="Test Read With Schema"
         )
-        test_db.add(ingestion)
-        test_db.commit()
-        test_db.refresh(ingestion)
-        return ingestion
 
     def test_read_with_schema_success(
         self, test_db, spark_client, spark_session, upload_file, ingestion_with_schema, schema
