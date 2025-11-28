@@ -6,16 +6,18 @@ from typing import Dict, Any, List, Optional
 class SparkConnectClient:
     """Client for Spark Connect operations."""
 
-    def __init__(self, connect_url: str, token: str):
+    def __init__(self, connect_url: str, token: str, s3_credentials: Optional[Dict[str, str]] = None):
         """
         Initialize Spark Connect client.
 
         Args:
             connect_url: Spark Connect URL (e.g., sc://host:15002)
             token: Authentication token
+            s3_credentials: Optional S3 credentials dict with 'aws_access_key_id' and 'aws_secret_access_key'
         """
         self.connect_url = connect_url
         self.token = token
+        self.s3_credentials = s3_credentials
         self.session: Optional[SparkSession] = None
 
     def connect(self) -> SparkSession:
@@ -41,12 +43,24 @@ class SparkConnectClient:
                 self.session = None
 
         if needs_new_session:
-            self.session = (
+            builder = (
                 SparkSession.builder.remote(self.connect_url)
                 .config("spark.sql.session.timeZone", "UTC")
                 .config("spark.sql.adaptive.enabled", "true")
-                .getOrCreate()
             )
+
+            # Configure S3 credentials at session creation time
+            if self.s3_credentials and self.s3_credentials.get('aws_access_key_id'):
+                builder = builder.config(
+                    "spark.hadoop.fs.s3a.access.key",
+                    self.s3_credentials['aws_access_key_id']
+                )
+                builder = builder.config(
+                    "spark.hadoop.fs.s3a.secret.key",
+                    self.s3_credentials['aws_secret_access_key']
+                )
+
+            self.session = builder.getOrCreate()
 
         return self.session
 

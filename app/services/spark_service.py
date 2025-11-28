@@ -2,6 +2,7 @@
 from typing import Dict, Any
 from app.models.schemas import IngestionCreate, PreviewResult, ColumnSchema
 from app.config import get_spark_connect_credentials
+from app.spark.connect_client import SparkConnectClient
 
 
 class SparkService:
@@ -81,18 +82,11 @@ class SparkService:
         Returns:
             Connection test result
         """
-        from app.spark.session_manager import get_session_pool
-
-        pool = get_session_pool()
-        client = None
-
+        client = SparkConnectClient(connect_url, token)
         try:
-            client = pool.get_client(cluster_id, connect_url, token)
-            result = client.test_connection()
-            return result
+            return client.test_connection()
         finally:
-            if client:
-                pool.return_client(cluster_id, client)
+            client.stop()
 
     def drop_table(self, cluster_id: str, table_fqn: str) -> Dict[str, Any]:
         """
@@ -105,15 +99,10 @@ class SparkService:
         Returns:
             Dict with operation result and table metadata
         """
-        from app.spark.session_manager import get_session_pool
-        from app.config import get_spark_connect_credentials
-
         spark_url, spark_token = get_spark_connect_credentials(cluster_id)
-        pool = get_session_pool()
-        client = None
+        client = SparkConnectClient(spark_url, spark_token)
 
         try:
-            client = pool.get_client(cluster_id, spark_url, spark_token)
             spark = client.connect()
 
             # Check if table exists before dropping (for response metadata)
@@ -139,5 +128,4 @@ class SparkService:
         except Exception as e:
             raise Exception(f"Failed to drop table {table_fqn}: {str(e)}")
         finally:
-            if client:
-                pool.return_client(cluster_id, client)
+            client.stop()

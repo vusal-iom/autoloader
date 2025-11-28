@@ -1,6 +1,7 @@
 """
 File processing tasks for Prefect flows.
 """
+import json
 from prefect import task, get_run_logger
 from typing import List, Dict
 
@@ -47,21 +48,34 @@ def process_files_task(
         if not ingestion:
             raise ValueError(f"Ingestion not found: {ingestion_id}")
 
-        # Initialize services
+        # Parse source credentials
+        s3_credentials = None
+        if ingestion.source_type == "s3" and ingestion.source_credentials:
+            s3_credentials = (
+                json.loads(ingestion.source_credentials)
+                if isinstance(ingestion.source_credentials, str)
+                else ingestion.source_credentials
+            )
+
+        # Initialize Spark client with credentials
         spark_url, spark_token = get_spark_connect_credentials(ingestion.cluster_id)
         spark_client = SparkConnectClient(
             connect_url=spark_url,
-            token=spark_token
+            token=spark_token,
+            s3_credentials=s3_credentials
         )
 
-        state_service = FileStateService(db)
-        processor = BatchFileProcessor(spark_client, state_service, ingestion, db)
+        try:
+            state_service = FileStateService(db)
+            processor = BatchFileProcessor(spark_client, state_service, ingestion, db)
 
-        # Process files
-        metrics = processor.process_files(files_to_process, run_id=run_id)
+            # Process files
+            metrics = processor.process_files(files_to_process, run_id=run_id)
 
-        logger.info(f"Processing complete: {metrics}")
-        return metrics
+            logger.info(f"Processing complete: {metrics}")
+            return metrics
+        finally:
+            spark_client.stop()
 
     finally:
         db.close()

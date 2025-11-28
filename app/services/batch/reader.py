@@ -18,7 +18,7 @@ from app.spark.spark_error_classifier import SparkErrorClassifier
 class SparkFileReader:
     """
     Service for reading files into Spark DataFrames.
-    Handles format options, credentials, and schema inference.
+    Handles format options and schema inference.
     """
 
     def __init__(self, spark_client: SparkConnectClient):
@@ -38,14 +38,6 @@ class SparkFileReader:
             Spark DataFrame
         """
         spark = self.spark_client.connect()
-
-        # Configure AWS credentials for S3 access
-        if ingestion.source_type == "s3" and ingestion.source_credentials:
-            credentials = json.loads(ingestion.source_credentials) if isinstance(ingestion.source_credentials, str) else ingestion.source_credentials
-            if credentials.get('aws_access_key_id'):
-                spark.conf.set("spark.hadoop.fs.s3a.access.key", credentials['aws_access_key_id'])
-                spark.conf.set("spark.hadoop.fs.s3a.secret.key", credentials['aws_secret_access_key'])
-
         reader = spark.read.format(ingestion.format_type)
 
         # Apply schema if available
@@ -78,14 +70,6 @@ class SparkFileReader:
             Spark DataFrame
         """
         spark = self.spark_client.connect()
-
-        # Configure AWS credentials for S3 access
-        if ingestion.source_type == "s3" and ingestion.source_credentials:
-            credentials = json.loads(ingestion.source_credentials) if isinstance(ingestion.source_credentials, str) else ingestion.source_credentials
-            if credentials.get('aws_access_key_id'):
-                spark.conf.set("spark.hadoop.fs.s3a.access.key", credentials['aws_access_key_id'])
-                spark.conf.set("spark.hadoop.fs.s3a.secret.key", credentials['aws_secret_access_key'])
-
         reader = spark.read \
             .format(ingestion.format_type) \
             .option("inferSchema", "true")

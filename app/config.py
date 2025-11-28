@@ -22,8 +22,6 @@ class Settings(BaseSettings):
     # Spark Connect
     spark_connect_default_port: int = 15002
     test_spark_connect_token: str = ""  # For testing: leave empty or set token
-    spark_session_pool_size: int = 10
-    spark_session_idle_timeout: int = 1800  # 30 minutes
 
     # Ingestion
     checkpoint_base_path: str = "s3://iomete-checkpoints/"
