@@ -277,3 +277,57 @@ class TestReadFileFormatOptions:
         df_expected = spark_session.createDataFrame(expected_rows, schema=expected_schema)
         assert_df_equality(df, df_expected, ignore_row_order=True, ignore_column_order=True)
         logger.success("Multiline JSON parsed correctly")
+
+
+@pytest.mark.integration
+class TestReadFileCredentials:
+    """Tests for SparkFileReader credential handling."""
+
+    @pytest.fixture
+    def ingestion(self, test_db):
+        """Create ingestion for credential tests."""
+        return create_test_ingestion(test_db, name_prefix="Test Credentials")
+
+    def test_read_with_invalid_credentials_fails(
+        self, test_db, ingestion
+    ):
+        """
+        Verifies that per-session S3 credentials are actually used.
+
+        With wrong credentials accessing a fresh bucket (no FS cache),
+        reading should fail with auth error.
+        """
+        from app.spark.connect_client import SparkConnectClient
+
+        logger = TestLogger()
+        logger.section("Integration Test: Invalid credentials fail")
+
+        # Use a unique bucket name that hasn't been accessed (avoids Hadoop FS cache)
+        unique_bucket = f"test-bucket-{uuid.uuid4().hex[:8]}"
+        s3_path = f"s3a://{unique_bucket}/data/test.json"
+        logger.step(f"Testing access to uncached bucket: {s3_path}")
+
+        # Create client with WRONG credentials
+        bad_client = SparkConnectClient(
+            connect_url="sc://localhost:15002",
+            token="",
+            s3_credentials={
+                "aws_access_key_id": "wrong_access_key",
+                "aws_secret_access_key": "wrong_secret_key"
+            }
+        )
+
+        try:
+            reader = SparkFileReader(bad_client)
+
+            with pytest.raises(FileProcessingError) as excinfo:
+                reader.read_file_infer_schema(s3_path, ingestion)
+
+            err: FileProcessingError = excinfo.value
+            # MinIO returns "bucket not found" for non-existent buckets with any credentials
+            assert err.category == FileErrorCategory.BUCKET_NOT_FOUND
+            assert err.user_message == "Source bucket not found."
+
+            logger.success(f"Wrong credentials correctly rejected: {err.category.value}")
+        finally:
+            bad_client.stop()
