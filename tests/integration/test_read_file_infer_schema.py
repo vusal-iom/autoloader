@@ -256,10 +256,10 @@ class TestReadFileFormatOptions:
 
         # Upload multiline JSON (pretty-printed, spans multiple lines)
         json_content = """{
-  "id": 1,
-  "name": "Alice",
-  "score": 95
-}"""
+          "id": 1,
+          "name": "Alice",
+          "score": 95
+        }"""
         s3_path = upload_file(key=f"data/read_json_multi_{uuid.uuid4()}.json", content=json_content)
         logger.step(f"Uploaded multiline JSON to {s3_path}")
 
