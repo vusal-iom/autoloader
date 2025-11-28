@@ -178,6 +178,16 @@ class SparkErrorClassifier:
     # ========================================================================
     @staticmethod
     def _classify_hadoop_exceptions(raw: str, file_path: str):
+        # Authentication / credentials errors
+        if "No AWS Credentials" in raw:
+            return FileProcessingError(
+                category=FileErrorCategory.AUTH,
+                retryable=False,
+                file_path=file_path,
+                user_message="Authentication failed. Check credentials.",
+                raw_error=raw,
+            )
+
         # Bucket does not exist
         if "NoSuchBucket" in raw or "bucket does not exist" in raw or "UnknownStoreException" in raw:
             return FileProcessingError(

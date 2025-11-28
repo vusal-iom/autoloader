@@ -289,23 +289,22 @@ class TestReadFileCredentials:
         return create_test_ingestion(test_db, name_prefix="Test Credentials")
 
     def test_read_with_invalid_credentials_fails(
-        self, test_db, ingestion
+        self, test_db, upload_file, ingestion, lakehouse_bucket
     ):
         """
         Verifies that per-session S3 credentials are actually used.
 
-        With wrong credentials accessing a fresh bucket (no FS cache),
-        reading should fail with auth error.
+        With wrong credentials, reading an existing file should fail with auth error.
         """
         from app.spark.connect_client import SparkConnectClient
 
         logger = TestLogger()
         logger.section("Integration Test: Invalid credentials fail")
 
-        # Use a unique bucket name that hasn't been accessed (avoids Hadoop FS cache)
-        unique_bucket = f"test-bucket-{uuid.uuid4().hex[:8]}"
-        s3_path = f"s3a://{unique_bucket}/data/test.json"
-        logger.step(f"Testing access to uncached bucket: {s3_path}")
+        # Upload a file using correct credentials (via minio_client fixture)
+        file_data = [{"id": 1, "name": "Test"}]
+        s3_path = upload_file(key=f"data/cred_test_{uuid.uuid4()}.json", content=file_data)
+        logger.step(f"Uploaded file to {s3_path}")
 
         # Create client with WRONG credentials
         bad_client = SparkConnectClient(
@@ -324,9 +323,8 @@ class TestReadFileCredentials:
                 reader.read_file_infer_schema(s3_path, ingestion)
 
             err: FileProcessingError = excinfo.value
-            # MinIO returns "bucket not found" for non-existent buckets with any credentials
-            assert err.category == FileErrorCategory.BUCKET_NOT_FOUND
-            assert err.user_message == "Source bucket not found."
+            assert err.category == FileErrorCategory.AUTH
+            assert err.user_message == "Authentication failed. Check credentials."
 
             logger.success(f"Wrong credentials correctly rejected: {err.category.value}")
         finally:
