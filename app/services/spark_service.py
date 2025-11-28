@@ -1,15 +1,11 @@
 """Spark service - high-level interface for Spark operations."""
 from typing import Dict, Any
 from app.models.schemas import IngestionCreate, PreviewResult, ColumnSchema
-from app.spark.executor import IngestionExecutor
 from app.config import get_spark_connect_credentials
 
 
 class SparkService:
     """Service for Spark-related operations."""
-
-    def __init__(self):
-        self.executor = IngestionExecutor()
 
     def preview(self, config: IngestionCreate) -> PreviewResult:
         """
@@ -40,7 +36,10 @@ class SparkService:
             },
         }
 
-        result = self.executor.preview(ingestion_dict)
+
+        # todo: we need to fix this
+        # result = self.executor.preview(ingestion_dict)
+        result = None
 
         if not result["success"]:
             raise Exception(f"Preview failed: {result.get('error')}")
