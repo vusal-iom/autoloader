@@ -6,6 +6,7 @@ from app.models.domain import Ingestion
 from app.services.schema_evolution_service import SchemaEvolutionService, SchemaComparison
 from app.repositories.schema_version_repository import SchemaVersionRepository
 from app.services.batch.errors import FileProcessingError, FileErrorCategory
+from app.spark.spark_error_classifier import SparkErrorClassifier
 
 logger = logging.getLogger(__name__)
 
@@ -25,44 +26,7 @@ class IcebergTableWriter:
         self.schema_version_repo = schema_version_repo
         self.db = db_session
 
-    def _classify_error(self, error: Exception) -> dict:
-        """Classify writer-specific errors."""
-        message = str(error) if error else "Unknown error"
-        lower = message.lower()
 
-        category = FileErrorCategory.UNKNOWN
-        retryable = True
-        user_message = message
-
-        if "schema" in lower or "cannot resolve" in lower or "analysisexception" in lower:
-            category = FileErrorCategory.SCHEMA_MISMATCH
-            retryable = False
-            user_message = "Schema mismatch detected. Align schema or enable evolution before retrying."
-        elif "write" in lower or "iceberg" in lower:
-            category = FileErrorCategory.WRITE_FAILURE
-            retryable = True
-            user_message = "Failed to write to the destination table. Retry or check destination health."
-        elif "connection" in lower or "timeout" in lower or "timed out" in lower:
-            category = FileErrorCategory.CONNECTIVITY
-            retryable = True
-            user_message = "Temporary connectivity issue. Safe to retry."
-
-        return {
-            "category": category,
-            "retryable": retryable,
-            "user_message": user_message
-        }
-
-    def _wrap_error(self, file_path: str, error: Exception) -> FileProcessingError:
-        """Wrap writer exceptions into FileProcessingError."""
-        classification = self._classify_error(error)
-        return FileProcessingError(
-            category=classification["category"],
-            retryable=classification["retryable"],
-            user_message=classification["user_message"],
-            raw_error=str(error),
-            file_path=file_path
-        )
 
     def write(self, df: DataFrame, file_path: str, ingestion: Ingestion):
         """
@@ -104,7 +68,7 @@ class IcebergTableWriter:
             logger.debug(f"Wrote DataFrame to {table_identifier}")
 
         except Exception as e:
-            raise self._wrap_error(file_path, e)
+            raise SparkErrorClassifier.classify(e, file_path)
 
     def _table_exists(self, spark, table_identifier: str) -> bool:
         """Check if Iceberg table exists."""

@@ -16,6 +16,7 @@ from app.models.domain import Ingestion, ProcessedFile
 from app.services.batch.reader import SparkFileReader
 from app.services.batch.writer import IcebergTableWriter
 from app.services.batch.errors import FileProcessingError, FileErrorCategory
+from app.spark.spark_error_classifier import SparkErrorClassifier
 import logging
 import json
 
@@ -48,37 +49,7 @@ class BatchFileProcessor:
         self.reader = SparkFileReader(spark_client)
         self.writer = IcebergTableWriter(spark_client, self.schema_version_repo, db)
 
-    def _classify_error(self, error: Exception) -> dict:
-        """Classify generic processor errors."""
-        message = str(error) if error else "Unknown error"
-        lower = message.lower()
 
-        category = FileErrorCategory.UNKNOWN
-        retryable = True
-        user_message = message
-
-        # Fallback classification for errors not caught by reader/writer
-        if "connection" in lower or "timeout" in lower or "timed out" in lower:
-            category = FileErrorCategory.CONNECTIVITY
-            retryable = True
-            user_message = "Temporary connectivity issue. Safe to retry."
-
-        return {
-            "category": category,
-            "retryable": retryable,
-            "user_message": user_message
-        }
-
-    def _wrap_error(self, file_path: str, error: Exception) -> FileProcessingError:
-        """Wrap processor exceptions into FileProcessingError."""
-        classification = self._classify_error(error)
-        return FileProcessingError(
-            category=classification["category"],
-            retryable=classification["retryable"],
-            user_message=classification["user_message"],
-            raw_error=str(error),
-            file_path=file_path
-        )
 
     def process_files(
         self,
@@ -151,7 +122,7 @@ class BatchFileProcessor:
 
             except Exception as e:
                 # Unexpected error -> wrap and handle
-                wrapped = self._wrap_error(file_path, e)
+                wrapped = SparkErrorClassifier.classify(e, file_path)
                 self.state.mark_file_failed(
                     file_record,
                     wrapped,
@@ -194,7 +165,7 @@ class BatchFileProcessor:
         try:
             record_count = int(df.count())  # Convert to Python int (from numpy.int64)
         except Exception as e:
-            raise self._wrap_error(file_path, e)
+            raise SparkErrorClassifier.classify(e, file_path)
 
         if record_count == 0:
             logger.warning(f"File {file_path} is empty, skipping write")
@@ -204,6 +175,6 @@ class BatchFileProcessor:
         try:
             self.writer.write(df, file_path, self.ingestion)
         except Exception as e:
-             raise self._wrap_error(file_path, e)
+             raise SparkErrorClassifier.classify(e, file_path)
 
         return {'record_count': record_count}

@@ -113,7 +113,7 @@ class TestReadFileInferSchema:
         assert (err.category, err.retryable, err.file_path) == (
             FileErrorCategory.DATA_MALFORMED, False, s3_path,
         )
-        assert err.user_message == "Malformed data encountered. Fix the source file or switch to PERMISSIVE mode."
+        assert err.user_message == "Malformed data encountered. Fix input file or adjust reader mode."
         assert "(org.apache.spark.SparkException) Job aborted due to stage failure" in err.raw_error
 
         logger.success("Malformed file raised FileProcessingError with correct category")
@@ -138,7 +138,7 @@ class TestReadFileInferSchema:
             FileErrorCategory.BUCKET_NOT_FOUND,
             False,
         )
-        assert err.user_message == "Source bucket not found. Verify bucket name and permissions."
+        assert err.user_message == "Source bucket not found."
 
         assert "(org.apache.hadoop.fs.s3a.UnknownStoreException)" in err.raw_error
         assert "The specified bucket does not exist" in err.raw_error
@@ -170,7 +170,7 @@ class TestReadFileInferSchema:
             FileErrorCategory.PATH_NOT_FOUND,
             False,
         )
-        assert err.user_message == "Source path not found. Verify bucket/key/prefix and retry."
+        assert err.user_message == "Source path not found."
         
         # Spark/Hadoop error for missing file usually contains "does not exist" or "FileNotFoundException"
         assert "does not exist" in err.raw_error or "FileNotFoundException" in err.raw_error
@@ -204,6 +204,6 @@ class TestReadFileInferSchema:
             FileErrorCategory.FORMAT_OPTIONS_INVALID, False, s3_path,
         )
 
-        assert err.user_message == "Invalid format options. Check mode/options for the reader."
+        assert err.user_message == "Invalid format options. Check numeric parameters."
         assert err.raw_error == """For input string: \"not-a-number\""""
         logger.success("Invalid format option categorized as FORMAT_OPTIONS_INVALID")
