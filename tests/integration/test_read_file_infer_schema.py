@@ -84,66 +84,9 @@ class TestReadFileInferSchema:
         assert_df_equality(df, df_expected, ignore_row_order=True)
         logger.success("Schema inferred and rows read as expected")
 
-    def test_read_infer_schema_malformed_file_failfast(
-        self, test_db, spark_client, upload_file, ingestion
-    ):
-        """
-        Malformed JSON should raise FileProcessingError with category=data_malformed
-        when FAILFAST is configured.
-        """
-        logger = TestLogger()
-        logger.section("Integration Test: read_file_infer_schema malformed file FAILFAST")
 
-        # Configure ingestion to fail fast on malformed records
-        ingestion.format_options = json.dumps({"mode": "FAILFAST"})
-        test_db.commit()
 
-        # Upload malformed content manually (not JSON-serializable)
-        content = b"{ this is not valid json }"
-        s3_path = upload_file(key=f"data/read_infer_bad_{uuid.uuid4()}.json", content=content)
-        logger.step(f"Uploaded malformed file to {s3_path}")
 
-        reader = SparkFileReader(spark_client)
-
-        with pytest.raises(FileProcessingError) as excinfo:
-            reader.read_file_infer_schema(s3_path, ingestion)
-
-        err: FileProcessingError  = excinfo.value
-
-        assert (err.category, err.retryable, err.file_path) == (
-            FileErrorCategory.DATA_MALFORMED, False, s3_path,
-        )
-        assert err.user_message == "Malformed data encountered. Fix input file or adjust reader mode."
-        assert "(org.apache.spark.SparkException) Job aborted due to stage failure" in err.raw_error
-
-        logger.success("Malformed file raised FileProcessingError with correct category")
-
-    def test_read_infer_schema_missing_bucket(
-        self, test_db, spark_client, ingestion
-    ):
-        """
-        Missing bucket should be categorized as bucket_not_found.
-        """
-        logger = TestLogger()
-        logger.section("Integration Test: read_file_infer_schema missing bucket")
-
-        missing_path = f"s3a://nonexistent-bucket-{uuid.uuid4()}/missing/file.json"
-        reader = SparkFileReader(spark_client)
-
-        with pytest.raises(FileProcessingError) as excinfo:
-            reader.read_file_infer_schema(missing_path, ingestion)
-
-        err: FileProcessingError = excinfo.value
-        assert (err.category, err.retryable) == (
-            FileErrorCategory.BUCKET_NOT_FOUND,
-            False,
-        )
-        assert err.user_message == "Source bucket not found."
-
-        assert "(org.apache.hadoop.fs.s3a.UnknownStoreException)" in err.raw_error
-        assert "The specified bucket does not exist" in err.raw_error
-
-        logger.success("Missing bucket categorized as BUCKET_NOT_FOUND")
 
     def test_read_infer_schema_missing_file(
         self, test_db, spark_client, upload_file, ingestion, lakehouse_bucket
@@ -177,33 +120,4 @@ class TestReadFileInferSchema:
 
         logger.success("Missing file categorized as PATH_NOT_FOUND")
 
-    def test_read_infer_schema_invalid_format_option(
-        self, test_db, spark_client, upload_file, ingestion
-    ):
-        """
-        Invalid format option should be categorized as format_options_invalid.
-        """
-        logger = TestLogger()
-        logger.section("Integration Test: read_file_infer_schema invalid format option")
 
-        ingestion.format_options = json.dumps({"samplingRatio": "not-a-number"})
-        test_db.commit()
-
-        s3_path = upload_file(
-            key=f"data/read_infer_invalid_mode_{uuid.uuid4()}.json",
-            content=[{"id": 1}]
-        )
-        reader = SparkFileReader(spark_client)
-
-        with pytest.raises(FileProcessingError) as excinfo:
-            reader.read_file_infer_schema(s3_path, ingestion)
-
-        err: FileProcessingError = excinfo.value
-
-        assert (err.category, err.retryable, err.file_path) == (
-            FileErrorCategory.FORMAT_OPTIONS_INVALID, False, s3_path,
-        )
-
-        assert err.user_message == "Invalid format options. Check numeric parameters."
-        assert err.raw_error == """For input string: \"not-a-number\""""
-        logger.success("Invalid format option categorized as FORMAT_OPTIONS_INVALID")

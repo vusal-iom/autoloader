@@ -1,6 +1,7 @@
 """
 Integration coverage for SparkErrorClassifier using real Spark Connect + MinIO.
 """
+from typing import List, Optional
 import uuid
 
 import pytest
@@ -19,7 +20,7 @@ def classify_and_assert(
     expected_category: FileErrorCategory,
     user_message: str,
     expected_retryable: bool = False,
-    raw_error_contains: list[str] | None = None,
+    raw_error_contains: Optional[List[str]] = None,
 ) -> FileProcessingError:
     """
     Classify exception and assert common expectations.
